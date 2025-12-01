@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  sentinel-eye:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sentinel-eye:latest
+    container_name: sentinel-eye-app
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./src:/app/src
+      - ./config.yaml:/app/config.yaml
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true

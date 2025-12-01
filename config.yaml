@@ -1,0 +1,44 @@
+# Configuration file for Sentinel Eye
+
+video:
+  input_path: data/
+  output_path: outputs/
+  target_resolution: [640, 480]
+  frame_skip: 2  # Process every 2 frames
+
+qc_score:
+  weights:
+    sharpness: 0.35
+    occlusion: 0.25
+    lighting: 0.20
+    cleanliness: 0.20
+  thresholds:
+    excellent: 80
+    good: 60
+    warning: 40
+
+stability:
+  history_size: 30
+  vibration_threshold: 5.0
+  enable_self_healing: true
+
+optimization:
+  use_gpu: true
+  batch_size: 1
+  enable_tensorrt: false
+  enable_onnx: false
+
+# Detection settings (Module 3)
+detection:
+  use_yolo: true
+  frame_skip: 2  # Process every 2 frames (skip 1)
+  show_yolo: true
+
+logging:
+  level: INFO
+  save_plots: true
+  save_videos: true
+
+roi:
+  default: [100, 100, 440, 280]  # x, y, w, h
+  enable_adaptive: true
