@@ -45,11 +45,11 @@ def draw_qc_metrics(frame: np.ndarray, metrics: Dict, position: Tuple[int, int] 
     font_scale = 0.6
     thickness = 2
     
-    cv2.putText(frame_copy, f"QC SCORE: {overall:.1f}", (x, y), font, font_scale, color, thickness)
-    cv2.putText(frame_copy, f"Sharpness: {metrics.get('sharpness', 0):.1f}", (x, y+30), font, 0.5, (255, 255, 255), 1)
-    cv2.putText(frame_copy, f"Occlusion: {metrics.get('occlusion', 0):.1f}", (x, y+55), font, 0.5, (255, 255, 255), 1)
-    cv2.putText(frame_copy, f"Lighting: {metrics.get('lighting', 0):.1f}", (x, y+80), font, 0.5, (255, 255, 255), 1)
-    cv2.putText(frame_copy, f"Cleanliness: {metrics.get('cleanliness', 0):.1f}", (x, y+105), font, 0.5, (255, 255, 255), 1)
+    cv2.putText(frame_copy, f"QC SCORE: {overall:.1f}", (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Sharpness: {metrics.get('sharpness', 0):.1f}", (x, y+30), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Occlusion: {metrics.get('occlusion', 0):.1f}", (x, y+55), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Lighting: {metrics.get('lighting', 0):.1f}", (x, y+80), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Cleanliness: {metrics.get('cleanliness', 0):.1f}", (x, y+105), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     
     return frame_copy
 
@@ -83,9 +83,9 @@ def draw_stability_info(frame: np.ndarray, dx: float, dy: float, is_vibrating: b
     
     # Draw text
     font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(frame_copy, f"STATUS: {status}", (x, y), font, 0.6, color, 2)
-    cv2.putText(frame_copy, f"Drift X: {dx:.2f}px", (x, y+30), font, 0.5, (255, 255, 255), 1)
-    cv2.putText(frame_copy, f"Drift Y: {dy:.2f}px", (x, y+55), font, 0.5, (255, 255, 255), 1)
+    cv2.putText(frame_copy, f"STATUS: {status}", (x, y), font, 0.6, color, 2, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Drift X: {dx:.2f}px", (x, y+30), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Drift Y: {dy:.2f}px", (x, y+55), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     
     return frame_copy
 
@@ -192,10 +192,18 @@ def draw_roi(frame: np.ndarray, roi: Tuple[int, int, int, int],
     # Draw rectangle
     cv2.rectangle(frame_copy, (x, y), (x+w, y+h), color, thickness)
     
-    # Draw label with background
+    # Draw label with background - asegurar que esté dentro del frame
     label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-    cv2.rectangle(frame_copy, (x, y-label_size[1]-10), (x+label_size[0]+10, y), color, -1)
-    cv2.putText(frame_copy, label, (x+5, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+    # Si el ROI está muy arriba, poner el label dentro del ROI
+    if y < label_size[1] + 15:
+        # Label dentro del ROI (arriba)
+        label_y = y + label_size[1] + 5
+        cv2.rectangle(frame_copy, (x, y), (x+label_size[0]+10, y+label_size[1]+10), color, -1)
+        cv2.putText(frame_copy, label, (x+5, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv2.LINE_AA)
+    else:
+        # Label fuera del ROI (arriba)
+        cv2.rectangle(frame_copy, (x, y-label_size[1]-10), (x+label_size[0]+10, y), color, -1)
+        cv2.putText(frame_copy, label, (x+5, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv2.LINE_AA)
     
     return frame_copy
 
@@ -239,7 +247,7 @@ def draw_performance_metrics(frame: np.ndarray, fps: float,
     cv2.addWeighted(overlay, 0.6, frame_copy, 0.4, 0, frame_copy)
     
     # Draw FPS
-    cv2.putText(frame_copy, f"FPS: {fps:.1f}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+    cv2.putText(frame_copy, f"FPS: {fps:.1f}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
     
     return frame_copy
 
@@ -278,7 +286,8 @@ def create_comparison_view(original: np.ndarray, processed: np.ndarray,
 def draw_vibration_graph(frame: np.ndarray, dx_history: list, dy_history: list, 
                         max_points: int = 150, 
                         position: Tuple[int, int] = None,
-                        size: Tuple[int, int] = (350, 120)) -> np.ndarray:
+                        size: Tuple[int, int] = (350, 120),
+                        vibration_threshold: float = 0.3) -> np.ndarray:
     """
     Draw real-time vibration graph overlay on frame.
     
@@ -289,6 +298,7 @@ def draw_vibration_graph(frame: np.ndarray, dx_history: list, dy_history: list,
         max_points: Maximum points to show in graph
         position: Bottom-left corner position (default: bottom-left of frame)
         size: Graph size (width, height)
+        vibration_threshold: Threshold for vibration detection (default: 0.3px)
         
     Returns:
         Frame with vibration graph overlay
@@ -317,7 +327,7 @@ def draw_vibration_graph(frame: np.ndarray, dx_history: list, dy_history: list,
     
     # Title
     cv2.putText(frame_copy, "Vibration History", (x_start + 5, y_start + 20), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     
     # Calculate scale
     max_drift = max(max(abs(d) for d in recent_dx), max(abs(d) for d in recent_dy), 1.0)
@@ -325,12 +335,25 @@ def draw_vibration_graph(frame: np.ndarray, dx_history: list, dy_history: list,
     
     # Center line (zero drift)
     center_y = y_start + graph_h // 2
-    cv2.line(frame_copy, (x_start, center_y), (x_start + graph_w, center_y), (100, 100, 100), 1)
+    cv2.line(frame_copy, (x_start, center_y), (x_start + graph_w, center_y), (100, 100, 100), 1, cv2.LINE_AA)
+    
+    # Draw vibration threshold lines (yellow dashed)
+    threshold_offset = int(vibration_threshold * scale)
+    threshold_y_upper = center_y - threshold_offset
+    threshold_y_lower = center_y + threshold_offset
+    
+    # Draw dashed threshold lines
+    if y_start + 25 <= threshold_y_upper <= y_start + graph_h - 5:
+        for i in range(x_start, x_start + graph_w, 10):
+            cv2.line(frame_copy, (i, threshold_y_upper), (min(i + 5, x_start + graph_w), threshold_y_upper), (0, 255, 255), 1, cv2.LINE_AA)
+    if y_start + 25 <= threshold_y_lower <= y_start + graph_h - 5:
+        for i in range(x_start, x_start + graph_w, 10):
+            cv2.line(frame_copy, (i, threshold_y_lower), (min(i + 5, x_start + graph_w), threshold_y_lower), (0, 255, 255), 1, cv2.LINE_AA)
     
     # Draw grid lines
     for i in range(1, 3):
         y_pos = y_start + (graph_h * i // 3)
-        cv2.line(frame_copy, (x_start, y_pos), (x_start + graph_w, y_pos), (50, 50, 50), 1)
+        cv2.line(frame_copy, (x_start, y_pos), (x_start + graph_w, y_pos), (50, 50, 50), 1, cv2.LINE_AA)
     
     # Plot drift lines
     if len(recent_dx) > 1:
@@ -347,7 +370,7 @@ def draw_vibration_graph(frame: np.ndarray, dx_history: list, dy_history: list,
             y1 = max(y_start + 25, min(y_start + graph_h - 5, y1))
             y2 = max(y_start + 25, min(y_start + graph_h - 5, y2))
             
-            cv2.line(frame_copy, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for X
+            cv2.line(frame_copy, (x1, y1), (x2, y2), (0, 0, 255), 2, cv2.LINE_AA)  # Red for X
             
             # Y drift (green)
             y1_dy = int(center_y - recent_dy[i - 1] * scale)
@@ -356,21 +379,26 @@ def draw_vibration_graph(frame: np.ndarray, dx_history: list, dy_history: list,
             y1_dy = max(y_start + 25, min(y_start + graph_h - 5, y1_dy))
             y2_dy = max(y_start + 25, min(y_start + graph_h - 5, y2_dy))
             
-            cv2.line(frame_copy, (x1, y1_dy), (x2, y2_dy), (0, 255, 0), 2)  # Green for Y
+            cv2.line(frame_copy, (x1, y1_dy), (x2, y2_dy), (0, 255, 0), 2, cv2.LINE_AA)  # Green for Y
     
     # Legend
-    cv2.line(frame_copy, (x_start + graph_w - 80, y_start + 15), (x_start + graph_w - 65, y_start + 15), (0, 0, 255), 2)
-    cv2.putText(frame_copy, "X", (x_start + graph_w - 60, y_start + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+    cv2.line(frame_copy, (x_start + graph_w - 80, y_start + 15), (x_start + graph_w - 65, y_start + 15), (0, 0, 255), 2, cv2.LINE_AA)
+    cv2.putText(frame_copy, "X", (x_start + graph_w - 60, y_start + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
     
-    cv2.line(frame_copy, (x_start + graph_w - 40, y_start + 15), (x_start + graph_w - 25, y_start + 15), (0, 255, 0), 2)
-    cv2.putText(frame_copy, "Y", (x_start + graph_w - 20, y_start + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+    cv2.line(frame_copy, (x_start + graph_w - 40, y_start + 15), (x_start + graph_w - 25, y_start + 15), (0, 255, 0), 2, cv2.LINE_AA)
+    cv2.putText(frame_copy, "Y", (x_start + graph_w - 20, y_start + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
+    
+    # Threshold indicator (bottom-right of legend area)
+    cv2.putText(frame_copy, f"Threshold: {vibration_threshold:.1f}px", 
+                (x_start + graph_w - 120, y_start + 35), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1, cv2.LINE_AA)
     
     # Current values
     current_dx = recent_dx[-1] if recent_dx else 0
     current_dy = recent_dy[-1] if recent_dy else 0
     cv2.putText(frame_copy, f"X:{current_dx:+.2f}px Y:{current_dy:+.2f}px", 
                 (x_start + 5, y_start + graph_h - 5), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
     
     return frame_copy
 
@@ -415,22 +443,22 @@ def draw_qc_score_graph(frame: np.ndarray, qc_history: list,
     
     # Title
     cv2.putText(frame_copy, "QC Score History", (x_start + 5, y_start + 20), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     
     # Threshold lines
     scale = (graph_h - 40) / 100  # Scale 0-100 to graph height
     
     # Excellent threshold (80)
     y_excellent = int(y_start + graph_h - 10 - (80 * scale))
-    cv2.line(frame_copy, (x_start, y_excellent), (x_start + graph_w, y_excellent), (0, 255, 0), 1)
+    cv2.line(frame_copy, (x_start, y_excellent), (x_start + graph_w, y_excellent), (0, 255, 0), 1, cv2.LINE_AA)
     
     # Good threshold (60)
     y_good = int(y_start + graph_h - 10 - (60 * scale))
-    cv2.line(frame_copy, (x_start, y_good), (x_start + graph_w, y_good), (0, 165, 255), 1)
+    cv2.line(frame_copy, (x_start, y_good), (x_start + graph_w, y_good), (0, 165, 255), 1, cv2.LINE_AA)
     
     # Warning threshold (40)
     y_warning = int(y_start + graph_h - 10 - (40 * scale))
-    cv2.line(frame_copy, (x_start, y_warning), (x_start + graph_w, y_warning), (0, 0, 255), 1)
+    cv2.line(frame_copy, (x_start, y_warning), (x_start + graph_w, y_warning), (0, 0, 255), 1, cv2.LINE_AA)
     
     # Plot QC line
     if len(recent_qc) > 1:
@@ -452,13 +480,13 @@ def draw_qc_score_graph(frame: np.ndarray, qc_history: list,
             else:
                 color = (0, 0, 255)  # Red
             
-            cv2.line(frame_copy, (x1, y1), (x2, y2), color, 2)
+            cv2.line(frame_copy, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
     
     # Current value
     current_qc = recent_qc[-1] if recent_qc else 0
     cv2.putText(frame_copy, f"Current: {current_qc:.1f}", 
                 (x_start + 5, y_start + graph_h - 5), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
     
     return frame_copy
 

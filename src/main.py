@@ -268,6 +268,7 @@ class SentinelEye:
                 roi_y = self.initial_roi_config['y']
                 roi_w = self.initial_roi_config['width']
                 roi_h = self.initial_roi_config['height']
+                self.roi_label = self.initial_roi_config.get('description', 'ROI')
                 logger.info(f"Using saved initial ROI: ({roi_x}, {roi_y}, {roi_w}x{roi_h})")
             else:
                 # Default: bottom-right corner
@@ -276,6 +277,7 @@ class SentinelEye:
                 roi_h = int(h * 0.20)  # 20% height
                 roi_x = w - roi_w - 10  # Bottom-right, 10px margin
                 roi_y = h - roi_h - 10
+                self.roi_label = "Auto-ROI (bottom-right 20%)"
                 logger.info(f"Using auto-calculated ROI: ({roi_x}, {roi_y}, {roi_w}x{roi_h})")
             
             self.current_roi = (roi_x, roi_y, roi_w, roi_h)
@@ -341,9 +343,13 @@ class SentinelEye:
                      (self.original_roi[0], self.original_roi[1]),
                      (self.original_roi[0] + self.original_roi[2], self.original_roi[1] + self.original_roi[3]),
                      (128, 128, 128), 2)
-        cv2.putText(processed, "ROI Original", 
-                   (self.original_roi[0], self.original_roi[1] - 10),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 128, 128), 2)
+        # Usar el label guardado (de initial_rois.json o auto-calculado)
+        roi_label = getattr(self, 'roi_label', 'ROI Original')
+        # Fuente más chica y posición segura
+        label_y = max(15, self.original_roi[1] - 5)
+        cv2.putText(processed, roi_label, 
+                   (self.original_roi[0], label_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (128, 128, 128), 1, cv2.LINE_AA)
         
         # Draw ROI transformado (polígono cyan + bounding box rojo)
         roi_corners = self.stability_analyzer.get_transformed_roi_corners()
@@ -358,10 +364,11 @@ class SentinelEye:
                          (self.current_roi[0] + self.current_roi[2], self.current_roi[1] + self.current_roi[3]),
                          (0, 0, 255), 2)
             
-            # Label del ROI transformado
+            # Label del ROI transformado - fuente más chica y posición segura
+            tracked_label_y = max(15, self.current_roi[1] - 5)
             cv2.putText(processed, "ROI Tracked (Self-healing)", 
-                       (self.current_roi[0], self.current_roi[1] - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                       (self.current_roi[0], tracked_label_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1, cv2.LINE_AA)
             
             # Flecha desde centro original a centro actual
             orig_center = (self.original_roi[0] + self.original_roi[2]//2, 
@@ -387,7 +394,8 @@ class SentinelEye:
             processed, 
             self.metrics_history['dx'], 
             self.metrics_history['dy'],
-            max_points=150
+            max_points=150,
+            vibration_threshold=self.stability_config['vibration_threshold']
         )
         
         # Draw QC Score graph overlay (top-left position)
