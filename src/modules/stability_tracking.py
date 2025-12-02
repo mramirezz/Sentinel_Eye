@@ -37,9 +37,9 @@ class StabilityAnalyzer:
         
         # Optical flow parameters
         self.feature_params = dict(
-            maxCorners=50,
-            qualityLevel=0.3,
-            minDistance=10,
+            maxCorners=100,
+            qualityLevel=0.01,
+            minDistance=7,
             blockSize=7
         )
         
@@ -102,7 +102,7 @@ class StabilityAnalyzer:
                 good_new = p1[st == 1]
                 good_old = self.prev_tracked_features[st.flatten() == 1]
                 
-                if len(good_new) > 5:
+                if len(good_new) > 2:  # Reducido de 5 a 2 features mínimas
                     # Calcular el movimiento promedio de las features tracked
                     movements = good_new - good_old
                     roi_dx = float(np.mean(movements[:, 0]))
@@ -110,6 +110,10 @@ class StabilityAnalyzer:
                     
                     self.tracked_features = good_new.reshape(-1, 2)
                     self.prev_tracked_features = self.tracked_features.copy()
+                else:
+                    # Si perdimos demasiadas features, recalcular en el ROI
+                    logger.warning(f"Only {len(good_new)} features tracked, recalculating...")
+                    self._recalculate_roi_features(gray)
         
         # Update history - USAR ROI DX/DY para vibración
         self.dx_history.append(roi_dx)

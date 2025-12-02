@@ -36,18 +36,11 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Project specific
-outputs/
-*.avi
-*.mp4
-*.mov
+# Project directories
+data/
 logs/
-*.log
-models/weights/
-*.pt
-*.onnx
-*.trt
-*.engine
+outputs/
+models/
 
 # Keep example outputs
 !outputs/.gitkeep

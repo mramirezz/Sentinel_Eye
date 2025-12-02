@@ -22,13 +22,40 @@ class ImageQualityChecker:
     GPU-accelerated with PyTorch.
     """
     
-    def __init__(self):
-        self.weights = {
-            'sharpness': 0.35,
-            'occlusion': 0.25,
-            'lighting': 0.20,
-            'cleanliness': 0.20
-        }
+    def __init__(self, config: dict = None):
+        # Load weights from config or use defaults
+        if config and 'qc_score' in config and 'weights' in config['qc_score']:
+            self.weights = config['qc_score']['weights']
+        else:
+            self.weights = {
+                'sharpness': 0.35,
+                'occlusion': 0.25,
+                'lighting': 0.20,
+                'cleanliness': 0.20
+            }
+        
+        # Load hyperparameters from config or use defaults
+        if config and 'qc_score' in config and 'hyperparameters' in config['qc_score']:
+            hp = config['qc_score']['hyperparameters']
+            self.sharpness_divisor = hp.get('sharpness_divisor', 8.0)
+            self.min_edge_density = hp.get('min_edge_density', 0.04)
+            self.edge_density_multiplier = hp.get('edge_density_multiplier', 500)
+            self.ideal_brightness = hp.get('ideal_brightness', 115)
+            self.brightness_divisor = hp.get('brightness_divisor', 0.8)
+            self.contrast_multiplier = hp.get('contrast_multiplier', 1.6)
+            self.spot_threshold = hp.get('spot_threshold', 15)
+            self.spot_penalty_multiplier = hp.get('spot_penalty_multiplier', 800)
+        else:
+            # Default values (strict)
+            self.sharpness_divisor = 8.0
+            self.min_edge_density = 0.04
+            self.edge_density_multiplier = 500
+            self.ideal_brightness = 115
+            self.brightness_divisor = 0.8
+            self.contrast_multiplier = 1.6
+            self.spot_threshold = 15
+            self.spot_penalty_multiplier = 800
+        
         # Use CUDA if available
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"QC Score usando: {self.device}")
@@ -99,8 +126,8 @@ class ImageQualityChecker:
         laplacian = torch.nn.functional.conv2d(gray_4d, laplacian_kernel, padding=1)
         variance = torch.var(laplacian).item()
         
-        # Normalize to 0-100 (typical range: 0-500)
-        score = min(100, (variance / 5.0))
+        # Normalize to 0-100 (typical range: 0-500) - Configurable strictness
+        score = min(100, (variance / self.sharpness_divisor))
         return score
     
     def _check_occlusion(self, gray: np.ndarray) -> float:
@@ -115,9 +142,9 @@ class ImageQualityChecker:
         edges_tensor = torch.from_numpy(edges).to(self.device)
         edge_density = (edges_tensor > 0).sum().item() / edges_tensor.numel()
         
-        # Normalize: typical good range 0.05-0.20
-        if edge_density < 0.02:
-            score = edge_density * 1000
+        # Normalize: configurable edge density threshold
+        if edge_density < self.min_edge_density:
+            score = edge_density * self.edge_density_multiplier
         elif edge_density > 0.25:
             score = max(0, 100 - (edge_density - 0.25) * 200)
         else:
@@ -135,9 +162,9 @@ class ImageQualityChecker:
         mean_brightness = torch.mean(gray_tensor).item()
         std_brightness = torch.std(gray_tensor).item()
         
-        # Ideal: mean around 120-140, good contrast (std > 40)
-        brightness_score = 100 - abs(mean_brightness - 127) / 1.27
-        contrast_score = min(100, std_brightness * 2)
+        # Configurable brightness and contrast sensitivity
+        brightness_score = max(0, 100 - abs(mean_brightness - self.ideal_brightness) / self.brightness_divisor)
+        contrast_score = min(100, std_brightness * self.contrast_multiplier)
         
         # Average both factors
         score = (brightness_score * 0.6 + contrast_score * 0.4)
@@ -151,12 +178,12 @@ class ImageQualityChecker:
         blurred = cv2.medianBlur(gray, 5)
         diff = cv2.absdiff(gray, blurred)
         
-        # Threshold to find significant spots
-        _, thresh = cv2.threshold(diff, 20, 255, cv2.THRESH_BINARY)
+        # Configurable spot detection threshold and penalty
+        _, thresh = cv2.threshold(diff, self.spot_threshold, 255, cv2.THRESH_BINARY)
         spot_density = np.sum(thresh > 0) / thresh.size
         
-        # Lower spot density = cleaner lens
-        score = max(0, 100 - (spot_density * 500))
+        # Lower spot density = cleaner lens (configurable penalty)
+        score = max(0, 100 - (spot_density * self.spot_penalty_multiplier))
         return min(100, score)
     
     def get_status_message(self, score: float) -> str:

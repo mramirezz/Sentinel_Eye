@@ -8,8 +8,6 @@ from .visualization import (
     draw_qc_metrics,
     draw_stability_info,
     draw_roi,
-    draw_performance_metrics,
-    create_comparison_view,
     save_metrics_plot
 )
 
@@ -19,7 +17,5 @@ __all__ = [
     'draw_qc_metrics',
     'draw_stability_info',
     'draw_roi',
-    'draw_performance_metrics',
-    'create_comparison_view',
     'save_metrics_plot'
 ]

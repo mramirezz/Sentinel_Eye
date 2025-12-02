@@ -56,8 +56,6 @@ def draw_qc_metrics(frame: np.ndarray, metrics: Dict, fps: float = 0.0, effectiv
     cv2.putText(frame_copy, f"Eff: {effective_fps:.1f} FPS", (x, y+140), font, 0.5, (0, 200, 255), 1, cv2.LINE_AA)
     
     return frame_copy
-    
-    return frame_copy
 
 
 def draw_stability_info(frame: np.ndarray, dx: float, dy: float, is_vibrating: bool,
@@ -92,8 +90,6 @@ def draw_stability_info(frame: np.ndarray, dx: float, dy: float, is_vibrating: b
     cv2.putText(frame_copy, f"{status}", (x, y), font, 0.65, color, 2, cv2.LINE_AA)
     cv2.putText(frame_copy, f"X: {dx:.1f}px", (x, y+25), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(frame_copy, f"Y: {dy:.1f}px", (x, y+47), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    
-    return frame_copy
     
     return frame_copy
 
@@ -214,81 +210,6 @@ def draw_roi(frame: np.ndarray, roi: Tuple[int, int, int, int],
         cv2.putText(frame_copy, label, (x+5, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv2.LINE_AA)
     
     return frame_copy
-
-
-def draw_performance_metrics(frame: np.ndarray, fps: float, 
-                            position: Tuple[int, int] = None) -> np.ndarray:
-    """
-    Draw performance metrics (FPS) on frame.
-    
-    Args:
-        frame: Input frame
-        fps: Current FPS
-        position: Position for text (default: top-right)
-        
-    Returns:
-        Frame with FPS drawn
-    """
-    frame_copy = frame.copy()
-    
-    # Don't show FPS during initial warm-up (less than 0.5 FPS is clearly wrong)
-    if fps < 0.5:
-        return frame_copy
-    
-    if position is None:
-        h, w = frame.shape[:2]
-        position = (w - 150, 30)
-    
-    x, y = position
-    
-    # Color based on FPS
-    if fps >= 25:
-        color = (0, 255, 0)  # Green
-    elif fps >= 15:
-        color = (0, 255, 255)  # Yellow
-    else:
-        color = (0, 0, 255)  # Red
-    
-    # Draw semi-transparent background
-    overlay = frame_copy.copy()
-    cv2.rectangle(overlay, (x-10, y-25), (x+140, y+10), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.6, frame_copy, 0.4, 0, frame_copy)
-    
-    # Draw FPS
-    cv2.putText(frame_copy, f"FPS: {fps:.1f}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
-    
-    return frame_copy
-
-
-def create_comparison_view(original: np.ndarray, processed: np.ndarray, 
-                          title1: str = "Original", title2: str = "Processed") -> np.ndarray:
-    """
-    Create side-by-side comparison view.
-    
-    Args:
-        original: Original frame
-        processed: Processed frame
-        title1: Title for original
-        title2: Title for processed
-        
-    Returns:
-        Combined comparison frame
-    """
-    # Ensure same size
-    h1, w1 = original.shape[:2]
-    h2, w2 = processed.shape[:2]
-    
-    if (h1, w1) != (h2, w2):
-        processed = cv2.resize(processed, (w1, h1))
-    
-    # Add titles
-    cv2.putText(original, title1, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv2.putText(processed, title2, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    
-    # Concatenate horizontally
-    combined = np.hstack([original, processed])
-    
-    return combined
 
 
 def draw_vibration_graph(frame: np.ndarray, dx_history: list, dy_history: list, 

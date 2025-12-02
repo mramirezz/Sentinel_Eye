@@ -16,7 +16,7 @@ class Config:
             'input_path': 'data/',
             'output_path': 'outputs/',
             'target_resolution': [640, 480],
-            'frame_skip': 1  # Process every N frames
+            'frame_skip': 2
         },
         'qc_score': {
             'weights': {
@@ -33,14 +33,20 @@ class Config:
         },
         'stability': {
             'history_size': 30,
-            'vibration_threshold': 5.0,
-            'enable_self_healing': True
+            'vibration_threshold': 0.8,
+            'enable_self_healing': True,
+            'initial_roi_file': 'initial_rois.json'
         },
         'optimization': {
             'use_gpu': True,
-            'batch_size': 1,
-            'enable_tensorrt': False,
-            'enable_onnx': False
+            'enable_resize': True
+        },
+        'detection': {
+            'use_yolo': True,
+            'yolo_model': 's',
+            'yolo_imgsz': 640,
+            'confidence_threshold': 0.5,
+            'show_yolo': True
         },
         'logging': {
             'level': 'INFO',
@@ -48,7 +54,7 @@ class Config:
             'save_videos': True
         },
         'roi': {
-            'default': [100, 100, 440, 280],  # x, y, w, h
+            'default': [100, 100, 440, 280],
             'enable_adaptive': True
         }
     }
@@ -100,8 +106,3 @@ class Config:
                 return default
         
         return value
-    
-    def save(self, output_path: str):
-        """Save current configuration to file."""
-        with open(output_path, 'w') as f:
-            yaml.dump(self.config, f, default_flow_style=False)

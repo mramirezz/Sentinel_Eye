@@ -20,17 +20,14 @@ class PerformanceOptimizer:
     
     def __init__(self, 
                  target_resolution: Optional[tuple] = None,
-                 use_gpu: bool = True,
-                 batch_size: int = 1):
+                 use_gpu: bool = True):
         """
         Args:
             target_resolution: Target resolution for downscaling (width, height)
             use_gpu: Whether to use GPU acceleration
-            batch_size: Batch size for batch processing
         """
         self.target_resolution = target_resolution or (640, 480)
         self.use_gpu = use_gpu and torch.cuda.is_available()
-        self.batch_size = batch_size
         
         # Performance metrics
         self.frame_times = []
@@ -68,29 +65,6 @@ class PerformanceOptimizer:
         except Exception as e:
             logger.error(f"Error preprocessing frame: {e}")
             return frame
-    
-    def batch_process_frames(self, frames: List[np.ndarray], 
-                            process_func, *args, **kwargs) -> List:
-        """
-        Process multiple frames in batch for better efficiency.
-        
-        Args:
-            frames: List of frames to process
-            process_func: Function to apply to each frame
-            
-        Returns:
-            List of processed results
-        """
-        results = []
-        
-        for i in range(0, len(frames), self.batch_size):
-            batch = frames[i:i + self.batch_size]
-            
-            for frame in batch:
-                result = process_func(frame, *args, **kwargs)
-                results.append(result)
-        
-        return results
     
     def optimize_cv_operations(self):
         """
@@ -163,28 +137,6 @@ class PerformanceOptimizer:
             True if should process, False if should skip
         """
         return frame_count % skip_factor == 0
-    
-    def convert_to_tensor(self, frame: np.ndarray) -> torch.Tensor:
-        """
-        Convert frame to PyTorch tensor for GPU processing.
-        
-        Args:
-            frame: Input BGR frame
-            
-        Returns:
-            Tensor on GPU if available
-        """
-        # Convert BGR to RGB
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Convert to tensor and normalize
-        tensor = torch.from_numpy(frame_rgb).float() / 255.0
-        tensor = tensor.permute(2, 0, 1).unsqueeze(0)  # NHWC -> NCHW
-        
-        if self.use_gpu:
-            tensor = tensor.cuda()
-        
-        return tensor
     
     def release_resources(self):
         """Clean up resources."""

@@ -8,26 +8,39 @@ video:
 
 qc_score:
   weights:
-    sharpness: 0.35
+    sharpness: 0.25
     occlusion: 0.25
-    lighting: 0.20
-    cleanliness: 0.20
+    lighting: 0.25
+    cleanliness: 0.25  
   thresholds:
     excellent: 80
     good: 60
     warning: 40
+  hyperparameters:
+    # Sharpness sensitivity: variance divisor (higher = more strict)
+    sharpness_divisor: 6.0  # Balanced (was 8.0 strict, 5.0 lenient)
+    
+    # Occlusion detection: minimum edge density threshold
+    min_edge_density: 0.03  # Balanced (was 0.04 strict, 0.02 lenient)
+    edge_density_multiplier: 1500  # Smoother gradient (was 500)
+   
+    # Lighting: ideal brightness center and tolerance
+    ideal_brightness: 120  # Center of ideal range (0-255)
+    brightness_divisor: 1.0  # More tolerant (was 0.8 strict)
+    contrast_multiplier: 1.8  # Balanced (was 1.6)
+    
+    # Cleanliness: dust/rain detection sensitivity
+    spot_threshold: 14  # More sensitive to detect rain/dust
+    spot_penalty_multiplier: 900  # Harsher penalty for spots
 
 stability:
   history_size: 30
-  vibration_threshold: 0.8  # Más sensible para detectar vibraciones menores
+  vibration_threshold: 0.8  # More sensitive to detect minor vibrations
   enable_self_healing: true
-  initial_roi_file: initial_rois.json  # Archivo con ROIs iniciales por video
+  initial_roi_file: initial_rois.json  # File with initial ROIs per video
 
 optimization:
   use_gpu: true
-  batch_size: 1
-  enable_tensorrt: false
-  enable_onnx: false
   enable_resize: true  # Downscale to target_resolution for faster processing (loses quality)
 
 # Detection settings (Module 3)

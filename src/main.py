@@ -46,7 +46,7 @@ class SentinelEye:
         # Initialize modules
         logger.info("Initializing Sentinel Eye modules...")
         
-        self.qc_checker = ImageQualityChecker()
+        self.qc_checker = ImageQualityChecker(config.config)
         
         # Stability analyzer will be initialized in process_video
         self.stability_config = {
@@ -58,8 +58,7 @@ class SentinelEye:
         target_res = tuple(config.get('video.target_resolution', [640, 480]))
         self.optimizer = PerformanceOptimizer(
             target_resolution=target_res,
-            use_gpu=config.get('optimization.use_gpu', True),
-            batch_size=config.get('optimization.batch_size', 1)
+            use_gpu=config.get('optimization.use_gpu', True)
         )
         
         # Module 3: Motion Detection
