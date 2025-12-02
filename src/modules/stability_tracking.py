@@ -13,16 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 class StabilityAnalyzer:
-    """
-    Detects vibration patterns and provides self-healing ROI adjustments.
-    """
+    """Detects vibration patterns and provides self-healing ROI adjustments."""
     
     def __init__(self, history_size: int = 30, vibration_threshold: float = 1.0):
-        """
-        Args:
-            history_size: Number of frames to keep in history
-            vibration_threshold: Pixel movement threshold to detect vibration
-        """
         self.history_size = history_size
         self.vibration_threshold = vibration_threshold
         
@@ -30,35 +23,18 @@ class StabilityAnalyzer:
         self.dx_history = deque(maxlen=history_size)
         self.dy_history = deque(maxlen=history_size)
         
-        # Previous frame for optical flow (vibration detection)
+        # Previous frame
         self.prev_gray = None
         
-        # Feature tracking for ROI self-healing
+        # Tracking features para visualización
         self.tracked_features = None
-        self.prev_tracked_features = None
-        self.prev_full_gray = None
-        self.roi_offset_x = 0.0
-        self.roi_offset_y = 0.0
+        self.prev_tracked_features = None  # Para tracking separado
         
-        # Reference ROI
-        self.reference_roi = None
+        # Reference ROI para transformación
         self.reference_roi_corners = None
-        
-        # Transformation matrix for ROI
         self.M_current = None
-        self.M_prev = None
-        self.alpha = 0.7
         
-        # ORB detector for robust features
-        self.orb = cv2.ORB_create(
-            nfeatures=100,
-            scaleFactor=1.2,
-            nlevels=8,
-            edgeThreshold=15,
-            patchSize=31
-        )
-        
-        # Cache for vibration detection
+        # Cache para vibration detection
         self.vibration_features = None
         self.vibration_feature_counter = 0
         
@@ -85,66 +61,59 @@ class StabilityAnalyzer:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         x, y, w, h = roi
         
-        # Extract ROI
+        # Detect features in ROI para visualización
         gray_roi = gray[y:y+h, x:x+w]
+        features_roi = cv2.goodFeaturesToTrack(gray_roi, mask=None, **self.feature_params)
         
-        # Enhance contrast
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        gray_roi_enhanced = clahe.apply(gray_roi)
-        
-        # Detect ORB keypoints in ROI
-        keypoints = self.orb.detect(gray_roi_enhanced, None)
-        
-        if keypoints and len(keypoints) > 10:
-            features_roi = np.array([kp.pt for kp in keypoints[:50]], dtype=np.float32)
+        if features_roi is not None and len(features_roi) > 0:
+            features_roi = features_roi.reshape(-1, 2)
             self.tracked_features = features_roi + np.array([x, y], dtype=np.float32)
-            logger.info(f"ORB tracking initialized with {len(self.tracked_features)} features")
-        else:
-            # Fallback to goodFeaturesToTrack
-            features_roi = cv2.goodFeaturesToTrack(gray_roi_enhanced, mask=None, **self.feature_params)
-            
-            if features_roi is not None and len(features_roi) > 0:
-                features_roi = features_roi.reshape(-1, 2)
-                self.tracked_features = features_roi + np.array([x, y], dtype=np.float32)
-                logger.info(f"Shi-Tomasi tracking with {len(self.tracked_features)} features")
-            else:
-                self.tracked_features = None
-                logger.error("No features detected in ROI")
-                return False
+            self.prev_tracked_features = self.tracked_features.copy()
+            logger.info(f"Tracking initialized with {len(self.tracked_features)} features")
         
-        # Save frames
-        self.prev_full_gray = gray
-        self.prev_gray = gray_roi
-        self.reference_roi = roi
-        
-        # Save ROI corners for transformation
+        # Save reference
+        self.prev_gray = gray
         self.reference_roi_corners = np.float32([
-            [x, y],
-            [x + w, y],
-            [x + w, y + h],
-            [x, y + h]
+            [x, y], [x + w, y], [x + w, y + h], [x, y + h]
         ]).reshape(-1, 1, 2)
-        
-        self.roi_offset_x = 0.0
-        self.roi_offset_y = 0.0
         
         return True
     
     def analyze_frame(self, frame: np.ndarray) -> Dict:
-        """
-        Analyze frame for vibration using sparse optical flow.
-        """
+        """Analyze frame for vibration using sparse optical flow."""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
         if self.prev_gray is None:
             self.prev_gray = gray
-            self.prev_full_gray = gray
             return self._get_default_result()
         
         self.frame_count += 1
         
-        # Calculate movement using cached features
+        # Calculate movement
         dx, dy = self._calculate_movement(self.prev_gray, gray)
+        
+        # Update tracked features usando optical flow DIRECTO (no el promedio)
+        roi_dx, roi_dy = 0.0, 0.0
+        if self.tracked_features is not None and self.prev_tracked_features is not None:
+            # Track features directamente
+            p1, st, err = cv2.calcOpticalFlowPyrLK(
+                self.prev_gray, gray, 
+                self.prev_tracked_features.reshape(-1, 1, 2), 
+                None, **self.lk_params
+            )
+            
+            if p1 is not None:
+                good_new = p1[st == 1]
+                good_old = self.prev_tracked_features[st.flatten() == 1]
+                
+                if len(good_new) > 5:
+                    # Calcular el movimiento promedio de las features tracked
+                    movements = good_new - good_old
+                    roi_dx = float(np.mean(movements[:, 0]))
+                    roi_dy = float(np.mean(movements[:, 1]))
+                    
+                    self.tracked_features = good_new.reshape(-1, 2)
+                    self.prev_tracked_features = self.tracked_features.copy()
         
         # Update history
         self.dx_history.append(dx)
@@ -153,9 +122,14 @@ class StabilityAnalyzer:
         # Detect vibration
         is_vibrating = self._detect_vibration()
         
-        # Update offsets
-        self.camera_offset_x += dx
-        self.camera_offset_y += dy
+        # Update offsets - USAR EL MOVIMIENTO DE LAS FEATURES TRACKED para ROI
+        if roi_dx != 0.0 or roi_dy != 0.0:
+            self.camera_offset_x += roi_dx
+            self.camera_offset_y += roi_dy
+        else:
+            # Fallback al promedio global si no hay features
+            self.camera_offset_x += dx
+            self.camera_offset_y += dy
         
         # Update transformation matrix
         if self.M_current is None:
@@ -164,9 +138,7 @@ class StabilityAnalyzer:
             self.M_current[0, 2] = self.camera_offset_x
             self.M_current[1, 2] = self.camera_offset_y
         
-        # Update previous frame
         self.prev_gray = gray
-        self.prev_full_gray = gray
         
         return {
             'displacement_x': float(dx),
@@ -179,8 +151,8 @@ class StabilityAnalyzer:
         }
     
     def _calculate_movement(self, prev_gray: np.ndarray, curr_gray: np.ndarray) -> Tuple[float, float]:
-        """Calculate camera movement using sparse optical flow with feature caching."""
-        # Recalculate features every 5 frames (antes era 10, ahora más frecuente)
+        """Calculate camera movement using sparse optical flow."""
+        # Recalculate features every 5 frames
         if self.vibration_features is None or self.vibration_feature_counter % 5 == 0:
             self.vibration_features = cv2.goodFeaturesToTrack(prev_gray, mask=None, **self.feature_params)
         
@@ -196,64 +168,48 @@ class StabilityAnalyzer:
             self.vibration_features = None
             return 0.0, 0.0
         
-        # Select good points
         good_new = p1[st == 1]
         good_old = self.vibration_features[st == 1]
         
-        # Si perdimos muchas features (< 50%), recalcular inmediatamente
-        tracking_ratio = len(good_new) / len(self.vibration_features)
-        if tracking_ratio < 0.5:
+        # Si perdimos >50% features, recalcular
+        if len(good_new) / len(self.vibration_features) < 0.5 or len(good_new) < 5:
             self.vibration_features = None
             return 0.0, 0.0
         
-        if len(good_new) < 5:
-            self.vibration_features = None
-            return 0.0, 0.0
-        
-        # Update cached features
+        # Update features
         self.vibration_features = good_new.reshape(-1, 1, 2)
         
-        # Calculate movement - usar mean de los mejores puntos en vez de median global
-        # Esto captura mejor la magnitud real de vibraciones grandes
+        # Calculate movement (mean, filtrando outliers)
         movements = good_new - good_old
         movement_magnitudes = np.sqrt(movements[:, 0]**2 + movements[:, 1]**2)
         
-        # Filtrar outliers (> 10px son probablemente errores)
         valid_mask = movement_magnitudes < 10.0
         if np.sum(valid_mask) < 3:
             self.vibration_features = None
             return 0.0, 0.0
         
         valid_movements = movements[valid_mask]
-        
-        # Usar mean en vez de median para capturar mejor las vibraciones fuertes
         dx = np.mean(valid_movements[:, 0])
         dy = np.mean(valid_movements[:, 1])
         
         return float(dx), float(dy)
     
     def _detect_vibration(self) -> bool:
-        """Detect if camera is vibrating."""
+        """Detect if camera is vibrating (simple: avg últimos 10 frames > 0.3px)."""
         if len(self.dx_history) < 5:
             return False
         
-        # Convertir deque a lista
         dx_list = list(self.dx_history)
         dy_list = list(self.dy_history)
         
-        # Usar últimos 10 frames
         recent_window = 10
         recent_dx = dx_list[-recent_window:] if len(dx_list) >= recent_window else dx_list
         recent_dy = dy_list[-recent_window:] if len(dy_list) >= recent_window else dy_list
         
-        # Calculate movement magnitude
         movements = np.sqrt(np.array(recent_dx)**2 + np.array(recent_dy)**2)
-        
-        # Si HAY CUALQUIER movimiento promedio > 0.3px en últimos 10 frames = VIBRATING
-        # Esto asegura que si la gráfica muestra movimiento, el STATUS también lo muestre
         recent_avg = np.mean(movements)
         
-        return recent_avg > 0.3  # Simple y directo: movimiento = vibración
+        return recent_avg > 0.3
     
     def adjust_roi(self, roi_original: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
         """Adjust ROI based on camera offset."""
