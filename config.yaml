@@ -4,7 +4,7 @@ video:
   input_path: data/
   output_path: outputs/
   target_resolution: [640, 480]
-  frame_skip: 2  # Process every 2 frames
+  frame_skip: 2  # Process every N frames
 
 qc_score:
   weights:
@@ -32,7 +32,7 @@ optimization:
 # Detection settings (Module 3)
 detection:
   use_yolo: true
-  frame_skip: 1  # Process every frame
+  confidence_threshold: 0.5  # YOLO confidence threshold (0.0-1.0)
   show_yolo: true
 
 logging:

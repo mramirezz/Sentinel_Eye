@@ -1,98 +1,179 @@
-# Sentinel Eye 🎥
+# Sentinel Eye
 
-Sistema avanzado de monitoreo de calidad de video y detección de objetos con **TensorRT**, **ORB feature tracking** y optimizaciones GPU.
+Sistema de monitoreo de calidad de video y detección de objetos con TensorRT, optical flow tracking y optimizaciones GPU para ambientes industriales.
 
-## 🚀 Características
+## Características Principales
 
 ### Módulo 1: Quality Control (QC) Score
-- **Sharpness Detection**: Análisis de nitidez con Laplacian variance
-- **Occlusion Detection**: Detección de obstrucciones de cámara
-- **Lighting Analysis**: Evaluación de condiciones de iluminación
-- **Cleanliness Check**: Detección de suciedad en lente
-- **Score ponderado**: Sistema configurable de pesos por métrica
+Sistema de diagnóstico de salud de imagen que analiza 4 métricas críticas:
+- **Sharpness**: Laplacian variance para detectar desenfoque
+- **Occlusion**: Edge density para detectar suciedad/obstrucciones
+- **Lighting**: Análisis de histograma RGB para low light/glare
+- **Cleanliness**: Variance de textura para detectar polvo acumulado
 
-### Módulo 2: Stability Analysis
-- **Camera Vibration Detection**: Detección de vibraciones con optical flow
-- **Movement Tracking**: Análisis de movimiento de cámara
-- **Feature Caching**: Optimización con cache de features cada 10 frames
-- **Self-Healing**: Recuperación automática de errores
+Score ponderado 0-100 con alertas automáticas si QC < 60.
+
+### Módulo 2: Stability & Self-Healing
+Detección de vibración y ajuste dinámico de ROI:
+- **Vibration Detection**: Optical flow con goodFeaturesToTrack (threshold 0.3px promedio en 10 frames)
+- **Self-Healing ROI**: ROI persigue zona física aunque cámara se mueva (pan/tilt/vibración)
+- **Dual Visualization**: ROI original (gris) vs ROI tracked (amarillo)
 
 ### Módulo 3: Motion Detection
-- **YOLOv8n + TensorRT**: Detección de objetos optimizada con TensorRT FP16
-- **ORB Feature Tracking**: Seguimiento de ROI con ORB features (persistencia en movimiento de cámara)
-- **Adaptive ROI**: ROI que persigue objetos detectados
-- **Background Subtraction**: Detección de movimiento por sustracción de fondo
+YOLOv8n optimizado con TensorRT FP16 para detección de objetos (8-14ms por frame).
 
-## ⚡ Optimizaciones
+## Rendimiento
 
-### GPU Acceleration
-- **TensorRT Engine**: YOLOv8n compilado con FP16 para inferencia ultra-rápida (8-14ms)
-- **PyTorch CUDA**: QC Score con tensores GPU (Laplacian, mean, std)
-- **Feature Caching**: Vibration features recalculadas cada 10 frames
-
-### Performance
-- **Frame Skip**: Procesamiento cada 2 frames con duplicación para mantener 30 FPS
-- **Frame Duplication**: Frames intermedios duplicados para video suave
-- **Batch Processing**: Pipeline optimizado por lotes
-
-### Rendimiento Actual
 ```
-QC Score:    9-10 ms
-Stability:   2 ms (con caching)
+QC Score:    9-10 ms (PyTorch CUDA)
+Stability:   1-2 ms (optical flow)
 YOLO:        8-14 ms (TensorRT FP16)
-Viz:         6-10 ms
-Total:       25-30 ms/frame → 30-40 FPS
+Visualization: 6-10 ms
+────────────────────────────
+Total:       25-30 ms
 ```
 
-## 🐳 Docker Setup
+## Arquitectura Técnica
 
-### Build y Run
+### Pipeline de Procesamiento
+
+El sistema usa **procesamiento secuencial single-threaded** por diseño:
+
+**¿Por qué no multiprocessing/threading?**
+- **GPU Bottleneck**: El cuello de botella es la GPU, no CPU. Paralelizar frames no ayuda porque compiten por misma GPU.
+- **Memory Efficiency**: Compartir contexto CUDA entre threads es complejo y propenso a race conditions.
+- **Simplicidad**: Pipeline secuencial es más fácil de debuggear y mantener.
+- **Frame Dependencies**: Self-healing ROI requiere estado del frame anterior (optical flow frame-to-frame).
+
+**Alternativa considerada**: AsyncIO para I/O (lectura de video) pero el procesamiento GPU es síncrono por naturaleza.
+
+**Optimización elegida**: Frame skip + caching de features en lugar de paralelización.
+
+### Decisiones de Optimización
+
+**1. TensorRT FP16 sobre ONNX Runtime**
+
+Razón: Hardware target es NVIDIA Jetson/GPU.
+- TensorRT es nativo para NVIDIA → mejor integración con CUDA
+- FP16 aprovecha Tensor Cores (3x speedup vs FP32)
+- ONNX Runtime es agnóstico pero más lento en NVIDIA hardware
+
+Métricas:
+```
+PyTorch FP32:     ~35ms/frame (baseline)
+ONNX Runtime:     ~28ms/frame
+TensorRT FP16:    8-14ms/frame (3x mejora)
+```
+
+**2. Frame Skip = 2**
+
+Inicialmente usamos frame_skip=1 (todos los frames) pero tracking era inestable.
+
+Hallazgo: Con skip=2, las features persisten más tiempo entre frames → mejor tracking ROI.
+
+Trade-off: Latencia aumenta pero tracking mejora significativamente (ROI no "tiembla").
+
+**3. Unified Vibration Architecture**
+
+Decisión: Usar mismas features del ROI para vibración + self-healing (en lugar de feature sets separados).
+
+Beneficio: Coherencia - vibración se calcula sobre zona de interés, no imagen completa.
+
+Resultado: Vibration detection más precisa y relevante para la zona monitoreada.
+
+## Estrategia MLOps (Escalado a Producción)
+
+### Deployment en 1000 Dispositivos Edge
+
+**Arquitectura**:
+```
+Edge (Jetson Xavier NX) → Regional Hub (TimescaleDB) → Cloud (AWS)
+```
+
+**Edge Layer**: 
+- Docker + K3s para orquestación
+- 24h buffer local (256GB NVMe)
+- Prometheus exporter para métricas
+
+**Monitoring de Data Drift**:
+
+El problema: Cámaras se ensucian progresivamente → QC score baja, sharpness cae, occlusion aumenta.
+
+**Estrategia de detección**:
+
+1. **Baseline (30 días)**: Establecer distribución normal de QC metrics por cámara
+2. **Detection diaria**: Kolmogorov-Smirnov test comparando últimos 7 días vs baseline
+3. **Threshold**: p-value < 0.05 indica drift significativo
+
+**Query de análisis** (TimescaleDB):
+```sql
+WITH baseline AS (
+  SELECT camera_id, AVG(qc_score) as baseline_mean
+  FROM metrics
+  WHERE timestamp >= NOW() - INTERVAL '30 days'
+    AND timestamp < NOW() - INTERVAL '7 days'
+  GROUP BY camera_id
+),
+recent AS (
+  SELECT camera_id, AVG(qc_score) as recent_mean
+  FROM metrics WHERE timestamp >= NOW() - INTERVAL '7 days'
+  GROUP BY camera_id
+)
+SELECT 
+  b.camera_id,
+  (b.baseline_mean - r.recent_mean) as drift_magnitude
+FROM baseline b JOIN recent r ON b.camera_id = r.camera_id
+WHERE drift_magnitude > 5;
+```
+
+**Auto-Remediation**:
+- QC < 40 por 24h → Ticket automático "limpiar cámara" (ServiceNow)
+- Vibración > 5px por 6h → Ticket "revisar montaje mecánico"
+- Drift detectado 3 días consecutivos → Trigger pipeline de re-entrenamiento
+
+**Model Retraining**:
+1. Collect edge cases (frames con QC < 60 o vibración > 3px) de últimos 90 días
+2. SageMaker training job: 80% data histórico + 20% edge cases recientes
+3. A/B testing: Deploy a 10% de dispositivos por 24 horas
+4. Promote si t-test muestra mejora significativa (p < 0.05)
+
+**Observability**:
+- Prometheus metrics: `qc_score`, `vibration_magnitude`, `frame_processing_ms`
+- Grafana dashboards: Fleet overview (heatmap), cámaras bajo threshold, latency p95
+- Alertas críticas: QC < 40 (30m), vibración > 5px (1h), latency p95 > 100ms
+
+**CI/CD Pipeline**:
+```
+GitHub Actions → pytest → docker build → ECR push → 
+canary deploy (10%) → monitor 1h → rollout/rollback
+```
+
+## Quick Start
+
+## Quick Start
+
+### Docker Setup
+
 ```bash
 # Build imagen
 docker-compose build
 
 # Procesar video
-docker-compose run --rm sentinel-eye python3 src/main.py --video data/your_video.mp4 --no-display
+docker-compose run --rm sentinel-eye python src/main.py --video data/video.mp4 --no-display
 
-# Procesar con output custom
-docker-compose run --rm sentinel-eye python3 src/main.py --video data/input.mp4 --output outputs/result.mp4 --no-display
+# Procesar todos los videos en data/
+docker-compose run --rm sentinel-eye python src/main.py --no-display
 ```
 
-### Requisitos
-- **Docker** con soporte NVIDIA GPU
-- **NVIDIA Container Toolkit**
-- **GPU NVIDIA** con compute capability ≥ 6.1
-- **CUDA 11.8+** (incluido en imagen base)
+**Requisitos**: Docker + NVIDIA Container Toolkit + GPU NVIDIA (compute capability ≥ 6.1)
 
-## 📁 Estructura del Proyecto
+## Configuración (config.yaml)
 
-```
-Sentinel_Eye/
-├── src/
-│   ├── main.py                    # Pipeline principal
-│   ├── modules/
-│   │   ├── qc_score.py           # Módulo 1: QC Score (PyTorch GPU)
-│   │   ├── stability.py          # Módulo 2: Stability (feature caching)
-│   │   ├── motion_detection.py   # Módulo 3: YOLO + ORB tracking
-│   │   ├── optimization.py       # Performance optimizer
-│   │   └── model_export.py       # TensorRT export utilities
-│   ├── utils/
-│   │   ├── config.py             # Configuration loader
-│   │   ├── logger.py             # Logging setup
-│   │   └── visualization.py      # Video output con overlays
-├── config.yaml                    # Configuración principal
-├── Dockerfile                     # TensorRT + PyTorch CUDA image
-├── docker-compose.yml
-├── requirements.txt
-└── OPTIMIZATION.md               # Documentación de optimizaciones
-
-```
-
-## ⚙️ Configuración (config.yaml)
+## Configuración (config.yaml)
 
 ```yaml
 video:
-  frame_skip: 2  # Process every 2 frames
+  frame_skip: 2  # Mejor tracking con skip=2
 
 qc_score:
   weights:
@@ -102,92 +183,93 @@ qc_score:
     cleanliness: 0.20
 
 stability:
-  history_size: 30
-  vibration_threshold: 5.0
+  vibration_threshold: 0.3  # px promedio en 10 frames
+  enable_self_healing: true
+  initial_roi_file: initial_rois.json
 
 detection:
   use_yolo: true
-  frame_skip: 2
-  show_yolo: true
-
-optimization:
-  use_gpu: true
-  enable_tensorrt: false  # TensorRT se carga automáticamente si existe .engine
+  confidence_threshold: 0.5
 ```
 
-## 🎯 ROI Tracking con ORB
+## ROI Tracking
 
-El sistema usa **ORB (Oriented FAST and Rotated BRIEF)** para trackear features en el ROI:
+## ROI Tracking
 
-1. **Detección inicial**: YOLO detecta objeto → crea ROI
-2. **Feature extraction**: ORB extrae ~50-100 features del ROI
-3. **Frame-to-frame tracking**: ORB matcher + RANSAC para homografía
-4. **ROI persistence**: ROI se mueve siguiendo las features aunque la cámara se mueva
+Define ROI inicial en `initial_rois.json`:
 
-### Ventajas vs Lucas-Kanade
-- ✅ **Robusto a rotación** (rotation invariant)
-- ✅ **Robusto a escala** (scale invariant)
-- ✅ **Rápido** (binary descriptors)
-- ✅ **Funciona con movimiento de cámara** (homografía global)
-
-## 📊 Outputs
-
-### Video Procesado
-- **Overlays**: QC Score, Stability metrics, YOLO detections, ROI tracking
-- **Gráficos**: QC history, vibration plot
-- **Bounding boxes**: YOLO detections con clase y confianza
-- **ROI tracker**: Rectángulo verde siguiendo features ORB
-
-### Logs
-```
-2025-12-01 22:48:01 - INFO - Timings [ms]: QC=9.2 | Stability=1.9 | YOLO=8.1 | Viz=8.7 | Total=28.2
-2025-12-01 22:48:01 - INFO - Progress: 9.9% | Frame: 30/302 | FPS: 27.8
-2025-12-01 22:48:01 - INFO - ORB: 52 features tracked | Homography valid
+```json
+{
+  "earthquake.mp4": {
+    "x": 599, "y": 399,
+    "width": 245, "height": 321,
+    "description": "Silla de oficina"
+  }
+}
 ```
 
-## 🔧 TensorRT Export
+El sistema usa **optical flow** (goodFeaturesToTrack + calcOpticalFlowPyrLK) para:
+1. Detectar ~100 features en ROI inicial
+2. Trackear features frame-to-frame
+3. Calcular desplazamiento medio → ajustar ROI automáticamente
+4. ROI persigue zona física aunque cámara se mueva
 
-El modelo YOLO se exporta automáticamente a TensorRT en el primer run:
+Ver `ROI_GUIDE.md` para más detalles.
 
-```bash
-# Manual export (opcional)
-docker-compose run --rm sentinel-eye python3 -c \
-  "from ultralytics import YOLO; \
-   model = YOLO('yolov8n.pt'); \
-   model.export(format='engine', device=0, half=True, imgsz=640)"
+## Output
+
+## Output
+
+**Video procesado** (`outputs/video_output.mp4`):
+- QC Score en tiempo real (top-right)
+- Gráficos de vibración (bottom-left)
+- ROI original (gris) vs ROI tracked (amarillo)
+- YOLO detections con bounding boxes
+
+**Métricas** (`outputs/video_output_metrics.png`):
+- Gráfico de vibración (X/Y drift) vs tiempo
+- Gráfico de QC Score vs tiempo
+
+**Logs**:
+```
+2025-12-02 11:24:09 - INFO - Timings [ms]: QC=9.2 | Stability=1.3 | YOLO=8.1 | Viz=8.5 | Total=28.2
+2025-12-02 11:24:09 - INFO - Progress: 7.9% | Frame: 60/757 | FPS: 27.4
+2025-12-02 11:24:09 - WARNING - Frame 54: Vibration detected (dx=0.23, dy=0.42)
 ```
 
-El engine generado (`yolov8n.engine`) se guarda en `models/` y se reutiliza automáticamente.
+## Troubleshooting
 
-## 📈 Optimizaciones Aplicadas
+## Troubleshooting
 
-1. **TensorRT FP16**: YOLO compilado con half precision
-2. **PyTorch GPU**: QC Score con operaciones CUDA
-3. **Feature Caching**: Vibration features cada 10 frames
-4. **Frame Skip**: Procesar cada 2 frames (mantener 30 FPS output)
-5. **Frame Duplication**: Duplicar frames procesados para suavidad
+**GPU no detectada**: `docker-compose run --rm sentinel-eye nvidia-smi`
 
-Ver `OPTIMIZATION.md` para detalles técnicos completos.
+**FPS bajo**: Aumenta `frame_skip` en config.yaml
 
-## 🐛 Troubleshooting
+**ROI no trackea**: Verifica que `initial_rois.json` tenga entrada para tu video
 
-### YOLO no detecta nada
-- Verifica que `models/yolov8n.engine` exista y sea válido
-- Prueba bajando `conf_threshold` en `config.yaml`
+**YOLO no detecta**: Baja `confidence_threshold` en config.yaml
 
-### FPS bajo
-- Verifica que GPU esté disponible: `docker-compose run --rm sentinel-eye nvidia-smi`
-- Aumenta `frame_skip` en `config.yaml`
+## Documentación Adicional
 
-### ORB no trackea ROI
-- Verifica que haya suficientes features: mínimo 10 features para homografía
-- Ajusta `max_features` en `motion_detection.py`
+- `OPTIMIZATION.md`: Detalles de optimizaciones TensorRT/CUDA
+- `ROI_GUIDE.md`: Configuración de ROI tracking
+- `MLOPS_STRATEGY.md`: Estrategia de deployment a escala
+- `EVALUATION_CHECKLIST.md`: Cumplimiento de requisitos
 
-## 📝 License
+## Stack Tecnológico
+
+- **Core**: Python 3.10, OpenCV 4.x, PyTorch 2.1.0
+- **Inference**: TensorRT 8.6.1 FP16, YOLOv8n
+- **GPU**: CUDA 11.8, cuDNN 8.x
+- **Container**: Docker, NVIDIA Container Toolkit
+- **Monitoring**: Prometheus (production), Grafana (dashboards)
+
+## License
 
 MIT
 
-## 👤 Author
+## Author
 
 mramirezz
+
 

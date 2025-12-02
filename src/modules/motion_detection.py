@@ -106,22 +106,21 @@ class YOLODetector:
 class OptimizedDetectionPipeline:
     """YOLO-based object detection pipeline."""
     
-    def __init__(self, 
-                 use_yolo: bool = True,
-                 use_background_sub: bool = False,
-                 frame_skip: int = 1):
+    def __init__(self, use_yolo: bool = True):
         """
         Args:
             use_yolo: Enable YOLO detector
-            use_background_sub: Ignored (kept for compatibility)
-            frame_skip: Ignored (kept for compatibility)
         """
         self.yolo = YOLODetector() if use_yolo else None
         logger.info("YOLO detection pipeline initialized")
     
-    def process_frame(self, frame: np.ndarray) -> dict:
+    def process_frame(self, frame: np.ndarray, conf_threshold: float = 0.25) -> dict:
         """
         Process frame with YOLO detector.
+        
+        Args:
+            frame: Input frame
+            conf_threshold: Confidence threshold for YOLO (0.0-1.0)
         
         Returns:
             dict with 'yolo' bounding boxes
@@ -129,7 +128,7 @@ class OptimizedDetectionPipeline:
         results = {'yolo': []}
         
         if self.yolo:
-            results['yolo'] = self.yolo.detect(frame)
+            results['yolo'] = self.yolo.detect(frame, conf_threshold=conf_threshold)
         
         return results
 

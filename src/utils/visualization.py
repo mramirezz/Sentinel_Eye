@@ -504,7 +504,8 @@ def save_metrics_plot(metrics_history: Dict, output_path: str):
     
     # 1. Camera Vibration (drift temporal)
     if 'dx' in metrics_history and 'dy' in metrics_history:
-        frames = range(len(metrics_history['dx']))
+        # Usar frame_numbers reales del video, no índices de frames procesados
+        frames = metrics_history.get('frame_numbers', range(len(metrics_history['dx'])))
         
         axes[0].plot(frames, metrics_history['dx'], label='X Drift', color='red', linewidth=1.5, alpha=0.8)
         axes[0].plot(frames, metrics_history['dy'], label='Y Drift', color='green', linewidth=1.5, alpha=0.8)
@@ -520,7 +521,8 @@ def save_metrics_plot(metrics_history: Dict, output_path: str):
     
     # 2. QC Score temporal
     if 'qc_scores' in metrics_history:
-        frames = range(len(metrics_history['qc_scores']))
+        # Usar frame_numbers reales del video, no índices de frames procesados
+        frames = metrics_history.get('frame_numbers', range(len(metrics_history['qc_scores'])))
         
         axes[1].plot(frames, metrics_history['qc_scores'], color='blue', linewidth=1.5, alpha=0.8)
         axes[1].axhline(y=80, color='green', linestyle='--', linewidth=1, alpha=0.5, label='Excellent (80+)')

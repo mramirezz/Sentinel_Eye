@@ -65,10 +65,9 @@ class SentinelEye:
         
         # Module 3: Motion Detection
         try:
+            self.yolo_confidence = config.get('detection.confidence_threshold', 0.25)
             self.motion_detector = OptimizedDetectionPipeline(
-                use_yolo=config.get('detection.use_yolo', True),
-                use_background_sub=config.get('detection.use_background_sub', True),
-                frame_skip=config.get('detection.frame_skip', 2)
+                use_yolo=config.get('detection.use_yolo', True)
             )
             logger.info("Motion Detection Pipeline initialized")
         except Exception as e:
@@ -81,6 +80,7 @@ class SentinelEye:
         
         # Metrics history
         self.metrics_history = {
+            'frame_numbers': [],  # Real frame numbers from video
             'qc_scores': [],
             'dx': [],
             'dy': [],
@@ -137,6 +137,20 @@ class SentinelEye:
         # Load initial ROI for this specific video
         video_name = os.path.basename(video_path)
         self.initial_roi_config = self._load_initial_roi(video_name)
+        
+        # Reset ROI for new video (critical for multi-video processing)
+        self.current_roi = None
+        self.original_roi = None
+        
+        # Reset metrics history for new video
+        self.metrics_history = {
+            'frame_numbers': [],
+            'qc_scores': [],
+            'dx': [],
+            'dy': [],
+            'fps': [],
+            'processing_time': []
+        }
         
         # Initialize stability analyzer
         self.stability_analyzer = StabilityAnalyzer(
@@ -257,6 +271,7 @@ class SentinelEye:
         # Module 1: QC Score
         t1 = time.time()
         qc_score, qc_metrics = self.qc_checker.compute_qc_score(frame)
+        self.metrics_history['frame_numbers'].append(frame_count)  # Real frame number
         self.metrics_history['qc_scores'].append(qc_score)
         t_qc = time.time() - t1
         
@@ -304,7 +319,7 @@ class SentinelEye:
         
         # Module 3: Motion/Object Detection
         t3 = time.time()
-        detections = self.motion_detector.process_frame(frame)
+        detections = self.motion_detector.process_frame(frame, conf_threshold=self.yolo_confidence)
         t_yolo = time.time() - t3
         
         # Module 4: Performance metrics

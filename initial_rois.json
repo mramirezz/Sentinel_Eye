@@ -13,6 +13,13 @@
     "height": 321,
     "description": "silla"
   },
+  "video_1_dust.avi": {
+    "x": 416,
+    "y": 325,
+    "width": 99,
+    "height": 84,
+    "description": "maquina de interes"
+  },
   "test_15s_dust.avi": {
     "x": 416,
     "y": 325,
@@ -26,6 +33,13 @@
     "width": 279,
     "height": 90,
     "description": "casas de fondo"
+  },
+  "video_2_vibration.mp4": {
+    "x": 1073,
+    "y": 372,
+    "width": 207,
+    "height": 345,
+    "description": "rocas en primer plano"
   },
   "test_15s_vibration.mp4": {
     "x": 1073,
