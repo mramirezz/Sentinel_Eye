@@ -586,29 +586,50 @@ def save_metrics_plot(metrics_history: Dict, output_path: str, video_fps: float 
         ax3.spines['top'].set_visible(False)
         ax3.spines['right'].set_visible(False)
     
-    # 4. FPS Over Time (BOTTOM RIGHT)
+    # 4. Summary Statistics (BOTTOM RIGHT)
     ax4 = fig.add_subplot(gs[1, 1])
-    if 'fps' in metrics_history:
-        # Clip FPS values to reasonable range (avoid startup spikes)
-        fps_clipped = np.clip(metrics_history['fps'], 0, 100)
-        ax4.plot(time_seconds, fps_clipped, color='purple', linewidth=1.5, alpha=0.8, label='Processing FPS')
-        
-        # Add effective FPS if available
-        if 'effective_fps' in metrics_history and metrics_history['effective_fps']:
-            eff_fps_clipped = np.clip(metrics_history['effective_fps'], 0, 100)
-            ax4.plot(time_seconds, eff_fps_clipped, color='orange', linewidth=1.5, alpha=0.8, label='Effective FPS (w/ skip)')
-        
-        ax4.axhline(y=video_fps, color='green', linestyle='--', linewidth=1, alpha=0.5, label=f'Real-time ({video_fps:.0f} FPS)')
-        ax4.set_ylim([0, 100])  # Limit to 0-100 FPS range
-        
-        ax4.set_title('Processing Speed Over Time', fontsize=14, fontweight='bold')
-        ax4.set_xlabel('Time (seconds)', fontsize=11)
-        ax4.set_ylabel('FPS', fontsize=11)
-        ax4.legend(loc='lower right', fontsize=9)
-        ax4.grid(True, alpha=0.3, linestyle='--')
-        ax4.spines['top'].set_visible(False)
-        ax4.spines['right'].set_visible(False)
+    ax4.axis('off')
     
-    plt.tight_layout()
+    # Calculate statistics
+    stats_text = "PROCESSING SUMMARY\n" + "="*50 + "\n\n"
+    
+    if 'qc_scores' in metrics_history and metrics_history['qc_scores']:
+        avg_qc = np.mean(metrics_history['qc_scores'])
+        min_qc = np.min(metrics_history['qc_scores'])
+        max_qc = np.max(metrics_history['qc_scores'])
+        stats_text += f"QC Score:\n"
+        stats_text += f"  • Average: {avg_qc:.1f}\n"
+        stats_text += f"  • Min: {min_qc:.1f}  |  Max: {max_qc:.1f}\n\n"
+    
+    if 'fps' in metrics_history and metrics_history['fps']:
+        avg_proc_fps = np.mean(metrics_history['fps'])
+        stats_text += f"Processing FPS:\n"
+        stats_text += f"  • Average: {avg_proc_fps:.1f} FPS\n\n"
+    
+    if 'effective_fps' in metrics_history and metrics_history['effective_fps']:
+        avg_eff_fps = np.mean(metrics_history['effective_fps'])
+        stats_text += f"Effective FPS (w/ frame skip):\n"
+        stats_text += f"  • Average: {avg_eff_fps:.1f} FPS\n\n"
+    
+    if 'dx' in metrics_history and 'dy' in metrics_history:
+        movements = np.sqrt(np.array(metrics_history['dx'])**2 + np.array(metrics_history['dy'])**2)
+        avg_movement = np.mean(movements)
+        max_movement = np.max(movements)
+        stats_text += f"Camera Movement:\n"
+        stats_text += f"  • Average: {avg_movement:.2f} px\n"
+        stats_text += f"  • Maximum: {max_movement:.2f} px\n\n"
+    
+    if 'frame_numbers' in metrics_history:
+        total_frames = len(metrics_history['frame_numbers'])
+        stats_text += f"Total Frames Processed: {total_frames}\n"
+    
+    # Display text
+    ax4.text(0.05, 0.95, stats_text, 
+             transform=ax4.transAxes,
+             fontsize=11,
+             verticalalignment='top',
+             fontfamily='monospace',
+             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+    
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()

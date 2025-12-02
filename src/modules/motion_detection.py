@@ -15,16 +15,19 @@ logger = logging.getLogger(__name__)
 class YOLODetector:
     """YOLOv8 object detector with TensorRT support."""
     
-    def __init__(self, model_size: str = 's', engine_path: str = None):
+    def __init__(self, model_size: str = 's', engine_path: str = None, imgsz: int = 640):
         """
         Args:
             model_size: YOLO model size ('n', 's', 'm', 'l', 'x')
             engine_path: Path to TensorRT engine (auto-generated if None)
+            imgsz: Input image size for YOLO (must be multiple of 32: 640, 1024, 1280)
         """
         self.model = None
         self.model_size = model_size
+        self.imgsz = imgsz
         self.model_name = f'yolov8{model_size}'
-        self.engine_path = engine_path or f'models/{self.model_name}.engine'
+        # Include imgsz in engine name so different sizes don't clash
+        self.engine_path = engine_path or f'models/{self.model_name}_{imgsz}.engine'
         
         if Path(self.engine_path).exists():
             logger.info(f"Loading existing TensorRT engine: {self.engine_path}")
@@ -42,9 +45,9 @@ class YOLODetector:
         """Generate TensorRT engine from YOLOv8 model."""
         try:
             from ultralytics import YOLO
-            logger.info(f"Exporting {self.model_name} to TensorRT (this may take a few minutes)...")
+            logger.info(f"Exporting {self.model_name} to TensorRT with imgsz={self.imgsz} (this may take a few minutes)...")
             model = YOLO(f'{self.model_name}.pt')
-            model.export(format='engine', device=0, half=True, imgsz=640)
+            model.export(format='engine', device=0, half=True, imgsz=self.imgsz)
             
             # Move generated engine to models directory
             import shutil
@@ -72,20 +75,18 @@ class YOLODetector:
             from ultralytics import YOLO
             self.model = YOLO(f'{self.model_name}.pt')
             logger.info(f"{self.model_name} PyTorch model loaded (fallback)")
-            logger.info("YOLOv8n PyTorch model loaded (fallback)")
         except Exception as e:
             logger.error(f"Failed to load YOLO: {e}")
     
     def detect(self, frame: np.ndarray, conf_threshold: float = 0.3) -> List[Dict]:
         """
-        Detect objects using YOLO (filtered to truck class only).
+        Detect objects using YOLO.
         Returns: List of detections with boxes, class, and confidence
         """
         if self.model is None:
             return []
         
         try:
-            # YOLO inference con TensorRT engine (640x640 default)
             results = self.model(frame, conf=conf_threshold, verbose=False)
             
             detections = []
@@ -114,14 +115,15 @@ class YOLODetector:
 class OptimizedDetectionPipeline:
     """YOLO-based object detection pipeline."""
     
-    def __init__(self, use_yolo: bool = True, yolo_model: str = 's'):
+    def __init__(self, use_yolo: bool = True, yolo_model: str = 's', yolo_imgsz: int = 640):
         """
         Args:
             use_yolo: Enable YOLO detector
             yolo_model: YOLO model size ('n', 's', 'm', 'l', 'x')
+            yolo_imgsz: YOLO input image size (640, 1024, 1280, etc.)
         """
-        self.yolo = YOLODetector(model_size=yolo_model) if use_yolo else None
-        logger.info(f"YOLO detection pipeline initialized (model: yolov8{yolo_model})")
+        self.yolo = YOLODetector(model_size=yolo_model, imgsz=yolo_imgsz) if use_yolo else None
+        logger.info(f"YOLO detection pipeline initialized (model: yolov8{yolo_model}, imgsz: {yolo_imgsz})")
     
     def process_frame(self, frame: np.ndarray, conf_threshold: float = 0.25) -> dict:
         """

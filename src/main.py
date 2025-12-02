@@ -65,9 +65,28 @@ class SentinelEye:
         # Module 3: Motion Detection
         try:
             self.yolo_confidence = config.get('detection.confidence_threshold', 0.25)
+            yolo_imgsz = config.get('detection.yolo_imgsz', 640)
+            
+            # Validate yolo_imgsz is multiple of 32
+            if yolo_imgsz % 32 != 0:
+                logger.warning(f"yolo_imgsz ({yolo_imgsz}) must be multiple of 32. Using 640 instead.")
+                yolo_imgsz = 640
+            
+            # Warn if enable_resize=true but target_resolution is much smaller than yolo_imgsz
+            if config.get('optimization.enable_resize', False):
+                target_w, target_h = target_res
+                max_target = max(target_w, target_h)
+                if max_target < yolo_imgsz * 0.5:
+                    logger.warning(
+                        f"target_resolution ({target_w}x{target_h}) is smaller than yolo_imgsz ({yolo_imgsz}). "
+                        f"YOLO will upscale resized frames, reducing detection quality. "
+                        f"Consider: increase target_resolution, decrease yolo_imgsz, or disable enable_resize."
+                    )
+            
             self.motion_detector = OptimizedDetectionPipeline(
                 use_yolo=config.get('detection.use_yolo', True),
-                yolo_model=config.get('detection.yolo_model', 's')
+                yolo_model=config.get('detection.yolo_model', 's'),
+                yolo_imgsz=yolo_imgsz
             )
             logger.info("Motion Detection Pipeline initialized")
         except Exception as e:

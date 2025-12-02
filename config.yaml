@@ -33,7 +33,8 @@ optimization:
 # Detection settings (Module 3)
 detection:
   use_yolo: true
-  yolo_model: s  # Model size: 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (xlarge)
+  yolo_model: l  # Model size: 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (xlarge)
+  yolo_imgsz: 640  # YOLO input size (must be multiple of 32: 640, 1024, 1280)
   confidence_threshold: 0.5  # YOLO confidence threshold (0.0-1.0)
   show_yolo: true
 
