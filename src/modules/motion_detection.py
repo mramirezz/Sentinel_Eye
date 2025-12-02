@@ -15,18 +15,25 @@ logger = logging.getLogger(__name__)
 class YOLODetector:
     """YOLOv8 object detector with TensorRT support."""
     
-    def __init__(self, engine_path: str = 'models/yolov8n.engine'):
+    def __init__(self, model_size: str = 's', engine_path: str = None):
+        """
+        Args:
+            model_size: YOLO model size ('n', 's', 'm', 'l', 'x')
+            engine_path: Path to TensorRT engine (auto-generated if None)
+        """
         self.model = None
-        self.engine_path = engine_path
+        self.model_size = model_size
+        self.model_name = f'yolov8{model_size}'
+        self.engine_path = engine_path or f'models/{self.model_name}.engine'
         
-        if Path(engine_path).exists():
-            logger.info(f"Loading existing TensorRT engine: {engine_path}")
-            self._load_tensorrt(engine_path)
+        if Path(self.engine_path).exists():
+            logger.info(f"Loading existing TensorRT engine: {self.engine_path}")
+            self._load_tensorrt(self.engine_path)
         else:
-            logger.info(f"TensorRT engine not found. Generating: {engine_path}")
+            logger.info(f"TensorRT engine not found. Generating: {self.engine_path}")
             self._generate_tensorrt_engine()
-            if Path(engine_path).exists():
-                self._load_tensorrt(engine_path)
+            if Path(self.engine_path).exists():
+                self._load_tensorrt(self.engine_path)
             else:
                 logger.warning("TensorRT generation failed, using PyTorch")
                 self._load_yolo()
@@ -35,16 +42,17 @@ class YOLODetector:
         """Generate TensorRT engine from YOLOv8 model."""
         try:
             from ultralytics import YOLO
-            logger.info("Exporting YOLOv8n to TensorRT (this may take a few minutes)...")
-            model = YOLO('yolov8n.pt')
+            logger.info(f"Exporting {self.model_name} to TensorRT (this may take a few minutes)...")
+            model = YOLO(f'{self.model_name}.pt')
             model.export(format='engine', device=0, half=True, imgsz=640)
             
             # Move generated engine to models directory
             import shutil
             import os
             os.makedirs('models', exist_ok=True)
-            if Path('yolov8n.engine').exists():
-                shutil.move('yolov8n.engine', self.engine_path)
+            engine_file = f'{self.model_name}.engine'
+            if Path(engine_file).exists():
+                shutil.move(engine_file, self.engine_path)
                 logger.info(f"TensorRT engine generated successfully: {self.engine_path}")
         except Exception as e:
             logger.error(f"Failed to generate TensorRT engine: {e}")
@@ -58,12 +66,12 @@ class YOLODetector:
         except Exception as e:
             logger.error(f"Failed to load TensorRT: {e}")
             self._load_yolo()
-    
     def _load_yolo(self):
         """Load YOLOv8 PyTorch model (fallback)."""
         try:
             from ultralytics import YOLO
-            self.model = YOLO('yolov8n.pt')
+            self.model = YOLO(f'{self.model_name}.pt')
+            logger.info(f"{self.model_name} PyTorch model loaded (fallback)")
             logger.info("YOLOv8n PyTorch model loaded (fallback)")
         except Exception as e:
             logger.error(f"Failed to load YOLO: {e}")
@@ -106,13 +114,14 @@ class YOLODetector:
 class OptimizedDetectionPipeline:
     """YOLO-based object detection pipeline."""
     
-    def __init__(self, use_yolo: bool = True):
+    def __init__(self, use_yolo: bool = True, yolo_model: str = 's'):
         """
         Args:
             use_yolo: Enable YOLO detector
+            yolo_model: YOLO model size ('n', 's', 'm', 'l', 'x')
         """
-        self.yolo = YOLODetector() if use_yolo else None
-        logger.info("YOLO detection pipeline initialized")
+        self.yolo = YOLODetector(model_size=yolo_model) if use_yolo else None
+        logger.info(f"YOLO detection pipeline initialized (model: yolov8{yolo_model})")
     
     def process_frame(self, frame: np.ndarray, conf_threshold: float = 0.25) -> dict:
         """

@@ -28,15 +28,17 @@ optimization:
   batch_size: 1
   enable_tensorrt: false
   enable_onnx: false
+  enable_resize: true  # Downscale to target_resolution for faster processing (loses quality)
 
 # Detection settings (Module 3)
 detection:
   use_yolo: true
+  yolo_model: s  # Model size: 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (xlarge)
   confidence_threshold: 0.5  # YOLO confidence threshold (0.0-1.0)
   show_yolo: true
 
 logging:
-  level: DEBUG
+  level: INFO
   save_plots: true
   save_videos: true
 

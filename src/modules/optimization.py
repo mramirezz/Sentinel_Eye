@@ -117,15 +117,16 @@ class PerformanceOptimizer:
         
         time_span = recent_times[-1] - recent_times[0]
         
-        # Avoid division by very small numbers (< 0.1 seconds)
-        if time_span < 0.1:
+        # Avoid division by zero, but allow very fast processing
+        # Changed from 0.1 to 0.001 (1ms minimum)
+        if time_span < 0.001:
             return 0.0
         
         fps = (len(recent_times) - 1) / time_span
         
         # Cap FPS at reasonable maximum (100 FPS)
-        # Anything above is likely calculation error
-        return min(fps, 100.0)
+        # Return at least 0.1 FPS to avoid showing 0 in graphs
+        return max(0.1, min(fps, 100.0))
     
     def record_frame_time(self):
         """Record timestamp for FPS calculation."""

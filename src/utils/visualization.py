@@ -9,13 +9,15 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
-def draw_qc_metrics(frame: np.ndarray, metrics: Dict, position: Tuple[int, int] = (10, 30)) -> np.ndarray:
+def draw_qc_metrics(frame: np.ndarray, metrics: Dict, fps: float = 0.0, effective_fps: float = 0.0, position: Tuple[int, int] = (10, 30)) -> np.ndarray:
     """
-    Draw QC metrics on frame.
+    Draw QC metrics on frame with FPS.
     
     Args:
         frame: Input frame
         metrics: Dictionary of QC metrics
+        fps: Processing FPS
+        effective_fps: Effective FPS (with frame skip)
         position: Starting position for text
         
     Returns:
@@ -35,26 +37,30 @@ def draw_qc_metrics(frame: np.ndarray, metrics: Dict, position: Tuple[int, int] 
     else:
         color = (0, 0, 255)  # Red
     
-    # Draw semi-transparent background
+    # Draw semi-transparent background (más compacto)
     overlay = frame_copy.copy()
-    cv2.rectangle(overlay, (x-5, y-25), (x+400, y+150), (0, 0, 0), -1)
+    cv2.rectangle(overlay, (x-5, y-20), (x+240, y+150), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.6, frame_copy, 0.4, 0, frame_copy)
     
-    # Draw metrics
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.6
-    thickness = 2
+    # Draw metrics con fuente más grande y mejor antialiasing
+    font = cv2.FONT_HERSHEY_DUPLEX
     
-    cv2.putText(frame_copy, f"QC SCORE: {overall:.1f}", (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
-    cv2.putText(frame_copy, f"Sharpness: {metrics.get('sharpness', 0):.1f}", (x, y+30), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame_copy, f"Occlusion: {metrics.get('occlusion', 0):.1f}", (x, y+55), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame_copy, f"Lighting: {metrics.get('lighting', 0):.1f}", (x, y+80), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame_copy, f"Cleanliness: {metrics.get('cleanliness', 0):.1f}", (x, y+105), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"QC: {overall:.0f}", (x, y), font, 0.65, color, 2, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Sharp: {metrics.get('sharpness', 0):.0f}", (x, y+25), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Occl: {metrics.get('occlusion', 0):.0f}", (x, y+47), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Light: {metrics.get('lighting', 0):.0f}", (x, y+69), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Clean: {metrics.get('cleanliness', 0):.0f}", (x, y+91), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    
+    # Add both FPS metrics together
+    cv2.putText(frame_copy, f"Proc: {fps:.1f} FPS", (x, y+118), font, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Eff: {effective_fps:.1f} FPS", (x, y+140), font, 0.5, (0, 200, 255), 1, cv2.LINE_AA)
+    
+    return frame_copy
     
     return frame_copy
 
 
-def draw_stability_info(frame: np.ndarray, dx: float, dy: float, is_vibrating: bool, 
+def draw_stability_info(frame: np.ndarray, dx: float, dy: float, is_vibrating: bool,
                        position: Tuple[int, int] = (10, 200)) -> np.ndarray:
     """
     Draw stability information on frame.
@@ -74,18 +80,20 @@ def draw_stability_info(frame: np.ndarray, dx: float, dy: float, is_vibrating: b
     
     # Color based on vibration status
     color = (0, 0, 255) if is_vibrating else (0, 255, 0)
-    status = "VIBRATING!" if is_vibrating else "STABLE"
+    status = "VIBRATING" if is_vibrating else "STABLE"
     
-    # Draw semi-transparent background
+    # Draw semi-transparent background (más compacto)
     overlay = frame_copy.copy()
-    cv2.rectangle(overlay, (x-5, y-25), (x+350, y+80), (0, 0, 0), -1)
+    cv2.rectangle(overlay, (x-5, y-20), (x+200, y+65), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.6, frame_copy, 0.4, 0, frame_copy)
     
-    # Draw text
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(frame_copy, f"STATUS: {status}", (x, y), font, 0.6, color, 2, cv2.LINE_AA)
-    cv2.putText(frame_copy, f"Drift X: {dx:.2f}px", (x, y+30), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame_copy, f"Drift Y: {dy:.2f}px", (x, y+55), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    # Draw text con fuente más grande
+    font = cv2.FONT_HERSHEY_DUPLEX
+    cv2.putText(frame_copy, f"{status}", (x, y), font, 0.65, color, 2, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"X: {dx:.1f}px", (x, y+25), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame_copy, f"Y: {dy:.1f}px", (x, y+47), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    
+    return frame_copy
     
     return frame_copy
 
@@ -491,52 +499,115 @@ def draw_qc_score_graph(frame: np.ndarray, qc_history: list,
     return frame_copy
 
 
-def save_metrics_plot(metrics_history: Dict, output_path: str):
+def save_metrics_plot(metrics_history: Dict, output_path: str, video_fps: float = 30.0):
     """
-    Save metrics plot to file - simplified with 2 clear temporal graphs.
+    Save metrics plot to file with 4 panels: 2D Drift, QC Score, and FPS.
     
     Args:
         metrics_history: Dictionary with lists of metrics over time
         output_path: Path to save plot
+        video_fps: Real video FPS for reference line
     """
-    fig, axes = plt.subplots(2, 1, figsize=(14, 8))
+    fig = plt.figure(figsize=(16, 10))
+    gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
+    
     fig.suptitle('Sentinel Eye - Performance Metrics', fontsize=16, fontweight='bold')
     
-    # 1. Camera Vibration (drift temporal)
-    if 'dx' in metrics_history and 'dy' in metrics_history:
-        # Usar frame_numbers reales del video, no índices de frames procesados
-        frames = metrics_history.get('frame_numbers', range(len(metrics_history['dx'])))
-        
-        axes[0].plot(frames, metrics_history['dx'], label='X Drift', color='red', linewidth=1.5, alpha=0.8)
-        axes[0].plot(frames, metrics_history['dy'], label='Y Drift', color='green', linewidth=1.5, alpha=0.8)
-        axes[0].axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
-        
-        axes[0].set_title('Camera Vibration - Drift Over Time', fontsize=14, fontweight='bold')
-        axes[0].set_xlabel('Frame Number', fontsize=11)
-        axes[0].set_ylabel('Drift (pixels)', fontsize=11)
-        axes[0].legend(loc='upper right', fontsize=10)
-        axes[0].grid(True, alpha=0.3, linestyle='--')
-        axes[0].spines['top'].set_visible(False)
-        axes[0].spines['right'].set_visible(False)
+    # Use timestamps (seconds) instead of frame numbers
+    time_seconds = metrics_history.get('timestamps', 
+                                       [f / 30.0 for f in metrics_history.get('frame_numbers', 
+                                                                               range(len(metrics_history.get('dx', []))))])
     
-    # 2. QC Score temporal
+    # 1. Camera Drift 2D Trajectory (TOP LEFT) - NEW!
+    ax1 = fig.add_subplot(gs[0, 0])
+    if 'dx' in metrics_history and 'dy' in metrics_history:
+        dx_arr = np.array(metrics_history['dx'])
+        dy_arr = np.array(metrics_history['dy'])
+        
+        # Plot trajectory with color gradient (time progression)
+        scatter = ax1.scatter(dx_arr, dy_arr, c=time_seconds, cmap='viridis', 
+                             s=10, alpha=0.6, edgecolors='none')
+        
+        # Add start and end markers
+        if len(dx_arr) > 0:
+            ax1.plot(dx_arr[0], dy_arr[0], 'go', markersize=12, label='Start', zorder=5)
+            ax1.plot(dx_arr[-1], dy_arr[-1], 'ro', markersize=12, label='End', zorder=5)
+        
+        # Reference lines at origin
+        ax1.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+        ax1.axvline(x=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+        
+        # Make axes equal for true spatial representation
+        max_range = max(abs(dx_arr).max() if len(dx_arr) > 0 else 1, 
+                       abs(dy_arr).max() if len(dy_arr) > 0 else 1) * 1.1
+        ax1.set_xlim([-max_range, max_range])
+        ax1.set_ylim([-max_range, max_range])
+        ax1.set_aspect('equal')
+        
+        ax1.set_title('Camera Drift - 2D Trajectory', fontsize=14, fontweight='bold')
+        ax1.set_xlabel('X Drift (pixels)', fontsize=11)
+        ax1.set_ylabel('Y Drift (pixels)', fontsize=11)
+        ax1.legend(loc='upper right', fontsize=9)
+        ax1.grid(True, alpha=0.3, linestyle='--')
+        
+        # Add colorbar for time
+        cbar = plt.colorbar(scatter, ax=ax1)
+        cbar.set_label('Time (seconds)', fontsize=9)
+    
+    # 2. QC Score temporal (TOP RIGHT)
+    ax2 = fig.add_subplot(gs[0, 1])
     if 'qc_scores' in metrics_history:
-        # Usar frame_numbers reales del video, no índices de frames procesados
-        frames = metrics_history.get('frame_numbers', range(len(metrics_history['qc_scores'])))
+        ax2.plot(time_seconds, metrics_history['qc_scores'], color='blue', linewidth=1.5, alpha=0.8)
+        ax2.axhline(y=80, color='green', linestyle='--', linewidth=1, alpha=0.5, label='Excellent (80+)')
+        ax2.axhline(y=60, color='orange', linestyle='--', linewidth=1, alpha=0.5, label='Good (60+)')
+        ax2.axhline(y=40, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Warning (40+)')
         
-        axes[1].plot(frames, metrics_history['qc_scores'], color='blue', linewidth=1.5, alpha=0.8)
-        axes[1].axhline(y=80, color='green', linestyle='--', linewidth=1, alpha=0.5, label='Excellent (80+)')
-        axes[1].axhline(y=60, color='orange', linestyle='--', linewidth=1, alpha=0.5, label='Good (60+)')
-        axes[1].axhline(y=40, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Warning (40+)')
+        ax2.set_title('Image Quality Score Over Time', fontsize=14, fontweight='bold')
+        ax2.set_xlabel('Time (seconds)', fontsize=11)
+        ax2.set_ylabel('QC Score (0-100)', fontsize=11)
+        ax2.set_ylim([0, 100])
+        ax2.legend(loc='lower right', fontsize=9)
+        ax2.grid(True, alpha=0.3, linestyle='--')
+        ax2.spines['top'].set_visible(False)
+        ax2.spines['right'].set_visible(False)
+    
+    # 3. X and Y Drift Over Time (BOTTOM LEFT)
+    ax3 = fig.add_subplot(gs[1, 0])
+    if 'dx' in metrics_history and 'dy' in metrics_history:
+        ax3.plot(time_seconds, metrics_history['dx'], label='X Drift', color='red', linewidth=1.5, alpha=0.8)
+        ax3.plot(time_seconds, metrics_history['dy'], label='Y Drift', color='green', linewidth=1.5, alpha=0.8)
+        ax3.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
         
-        axes[1].set_title('Image Quality Score Over Time', fontsize=14, fontweight='bold')
-        axes[1].set_xlabel('Frame Number', fontsize=11)
-        axes[1].set_ylabel('QC Score (0-100)', fontsize=11)
-        axes[1].set_ylim([0, 100])
-        axes[1].legend(loc='lower right', fontsize=9)
-        axes[1].grid(True, alpha=0.3, linestyle='--')
-        axes[1].spines['top'].set_visible(False)
-        axes[1].spines['right'].set_visible(False)
+        ax3.set_title('Camera Vibration - Drift Over Time', fontsize=14, fontweight='bold')
+        ax3.set_xlabel('Time (seconds)', fontsize=11)
+        ax3.set_ylabel('Drift (pixels)', fontsize=11)
+        ax3.legend(loc='upper right', fontsize=10)
+        ax3.grid(True, alpha=0.3, linestyle='--')
+        ax3.spines['top'].set_visible(False)
+        ax3.spines['right'].set_visible(False)
+    
+    # 4. FPS Over Time (BOTTOM RIGHT)
+    ax4 = fig.add_subplot(gs[1, 1])
+    if 'fps' in metrics_history:
+        # Clip FPS values to reasonable range (avoid startup spikes)
+        fps_clipped = np.clip(metrics_history['fps'], 0, 100)
+        ax4.plot(time_seconds, fps_clipped, color='purple', linewidth=1.5, alpha=0.8, label='Processing FPS')
+        
+        # Add effective FPS if available
+        if 'effective_fps' in metrics_history and metrics_history['effective_fps']:
+            eff_fps_clipped = np.clip(metrics_history['effective_fps'], 0, 100)
+            ax4.plot(time_seconds, eff_fps_clipped, color='orange', linewidth=1.5, alpha=0.8, label='Effective FPS (w/ skip)')
+        
+        ax4.axhline(y=video_fps, color='green', linestyle='--', linewidth=1, alpha=0.5, label=f'Real-time ({video_fps:.0f} FPS)')
+        ax4.set_ylim([0, 100])  # Limit to 0-100 FPS range
+        
+        ax4.set_title('Processing Speed Over Time', fontsize=14, fontweight='bold')
+        ax4.set_xlabel('Time (seconds)', fontsize=11)
+        ax4.set_ylabel('FPS', fontsize=11)
+        ax4.legend(loc='lower right', fontsize=9)
+        ax4.grid(True, alpha=0.3, linestyle='--')
+        ax4.spines['top'].set_visible(False)
+        ax4.spines['right'].set_visible(False)
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight')

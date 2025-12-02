@@ -189,8 +189,24 @@ stability:
 
 detection:
   use_yolo: true
-  confidence_threshold: 0.5
+  yolo_model: s  # 'n' (nano), 's' (small), 'm' (medium), 'l' (large), 'x' (xlarge)
+  confidence_threshold: 0.25  # 0.0-1.0
+
+logging:
+  level: INFO  # INFO (producción) o DEBUG (desarrollo)
+  save_plots: true
+  save_videos: true
 ```
+
+**Niveles de logging**:
+- `INFO`: Logs limpios (Progress cada 30 frames, timings cada 100 frames, solo vibraciones significativas >1.6px)
+- `DEBUG`: Logs detallados (todos los timings, todas las vibraciones, debug interno de módulos)
+
+**Modelos YOLO disponibles**:
+- `n` = YOLOv8n (6 MB, 8-14ms) - Más rápido, menos preciso
+- `s` = YOLOv8s (22 MB, 20-25ms) - **Recomendado** (mejor balance)
+- `m` = YOLOv8m (50 MB, 40-50ms) - Alta precisión
+- `l` = YOLOv8l (84 MB, 60-80ms) - Máxima precisión
 
 ## ROI Tracking
 

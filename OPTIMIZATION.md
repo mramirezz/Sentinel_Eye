@@ -1,5 +1,28 @@
 # Optimización TensorRT - Sentinel Eye
 
+## Por Qué YOLOv8n + TensorRT FP16
+
+**Modelo elegido**: YOLOv8n (nano)
+- **Tamaño**: 3.2M parámetros, 6.2 MB
+- **Speed/Accuracy trade-off**: Más rápido que YOLOv8s/m/l/x, suficiente precisión para detección general
+- **Edge-friendly**: Cabe en GPUs pequeñas (Jetson Nano con 2GB VRAM)
+
+**Pipeline de conversión**: PyTorch → ONNX → TensorRT
+1. **PyTorch (.pt)**: Modelo original de Ultralytics, descargado automáticamente si no existe
+2. **ONNX (.onnx)**: Formato intermedio estándar, facilita la conversión a TensorRT
+3. **TensorRT (.engine)**: Ejecutable optimizado específico para tu GPU
+
+**Por qué FP16 (half precision)**:
+- **Tensor Cores**: RTX 3050/Jetson tienen Tensor Cores que aceleran FP16 (2-3x speedup)
+- **Memoria**: Usa mitad de VRAM (crítico en GPUs edge con 4GB)
+- **Precisión**: Pérdida mínima en mAP (<1%) para detección de objetos
+- **Trade-off**: FP32 es 0.5% más preciso pero 3x más lento
+
+**Alternativas descartadas**:
+- ONNX Runtime: Agnóstico pero 2x más lento que TensorRT en NVIDIA GPUs
+- YOLOv5: Arquitectura más vieja, YOLOv8 tiene mejor accuracy/speed ratio
+- YOLOv8s/m: Más precisos pero 2-4x más lentos (innecesario para uso general)
+
 ## Auto-Generación de TensorRT Engine
 
 ### Primera Ejecución (Automática)
