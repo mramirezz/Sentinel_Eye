@@ -464,7 +464,6 @@ def draw_qc_score_graph(frame: np.ndarray, qc_history: list,
 
 
 def save_metrics_plot(metrics_history: Dict, output_path: str):
-
     """
     Save metrics plot to file - simplified with 2 clear temporal graphs.
     
