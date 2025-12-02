@@ -19,8 +19,9 @@ qc_score:
 
 stability:
   history_size: 30
-  vibration_threshold: 5.0
+  vibration_threshold: 0.8  # Más sensible para detectar vibraciones menores
   enable_self_healing: true
+  initial_roi_file: initial_rois.json  # Archivo con ROIs iniciales por video
 
 optimization:
   use_gpu: true
@@ -31,11 +32,11 @@ optimization:
 # Detection settings (Module 3)
 detection:
   use_yolo: true
-  frame_skip: 2  # Process every 2 frames (skip 1)
+  frame_skip: 1  # Process every frame
   show_yolo: true
 
 logging:
-  level: INFO
+  level: DEBUG
   save_plots: true
   save_videos: true
 

@@ -68,7 +68,7 @@ class YOLODetector:
         except Exception as e:
             logger.error(f"Failed to load YOLO: {e}")
     
-    def detect(self, frame: np.ndarray, conf_threshold: float = 0.1) -> List[Dict]:
+    def detect(self, frame: np.ndarray, conf_threshold: float = 0.3) -> List[Dict]:
         """
         Detect objects using YOLO (filtered to truck class only).
         Returns: List of detections with boxes, class, and confidence

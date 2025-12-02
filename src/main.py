@@ -9,12 +9,14 @@ from pathlib import Path
 import argparse
 from typing import Optional
 import sys
+import json
+import os
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent))
 
 from modules.qc_score import ImageQualityChecker
-from modules.stability import StabilityAnalyzer
+from modules.stability_tracking import StabilityAnalyzer
 from modules.optimization import PerformanceOptimizer
 from modules.motion_detection import OptimizedDetectionPipeline, draw_detections
 from utils.logger import setup_logger
@@ -47,10 +49,12 @@ class SentinelEye:
         
         self.qc_checker = ImageQualityChecker()
         
-        self.stability_analyzer = StabilityAnalyzer(
-            history_size=config.get('stability.history_size', 30),
-            vibration_threshold=config.get('stability.vibration_threshold', 5.0)
-        )
+        # Stability analyzer will be initialized in process_video
+        self.stability_config = {
+            'history_size': config.get('stability.history_size', 30),
+            'vibration_threshold': config.get('stability.vibration_threshold', 5.0)
+        }
+        self.initial_roi_file = config.get('stability.initial_roi_file', 'initial_rois.json')
         
         target_res = tuple(config.get('video.target_resolution', [640, 480]))
         self.optimizer = PerformanceOptimizer(
@@ -91,6 +95,34 @@ class SentinelEye:
         
         logger.info("Sentinel Eye initialized successfully")
     
+    def _load_initial_roi(self, video_name: str) -> Optional[dict]:
+        """
+        Load initial ROI from JSON file for the given video.
+        
+        Args:
+            video_name: Name of the video file (e.g., 'earthquake.mp4')
+            
+        Returns:
+            Initial ROI dict with x, y, width, height or None if not found
+        """
+        try:
+            with open(self.initial_roi_file, 'r') as f:
+                rois = json.load(f)
+            
+            if video_name in rois:
+                roi = rois[video_name]
+                logger.info(f"Loaded initial ROI for {video_name}: ({roi['x']}, {roi['y']}, {roi['width']}x{roi['height']})")
+                return roi
+            else:
+                logger.warning(f"No initial ROI found for {video_name}. Will use auto-calculated ROI.")
+                return None
+        except FileNotFoundError:
+            logger.warning(f"Initial ROIs file not found: {self.initial_roi_file}")
+            return None
+        except Exception as e:
+            logger.error(f"Error loading initial ROI: {e}")
+            return None
+    
     def process_video(self, video_path: str, output_path: Optional[str] = None, display: bool = True):
         """
         Process a video file with all modules.
@@ -101,6 +133,16 @@ class SentinelEye:
             display: Whether to display video during processing
         """
         logger.info(f"Processing video: {video_path}")
+        
+        # Load initial ROI for this specific video
+        video_name = os.path.basename(video_path)
+        self.initial_roi_config = self._load_initial_roi(video_name)
+        
+        # Initialize stability analyzer
+        self.stability_analyzer = StabilityAnalyzer(
+            history_size=self.stability_config['history_size'],
+            vibration_threshold=self.stability_config['vibration_threshold']
+        )
         
         # Open video
         cap = cv2.VideoCapture(video_path)
@@ -218,35 +260,44 @@ class SentinelEye:
         self.metrics_history['qc_scores'].append(qc_score)
         t_qc = time.time() - t1
         
-        # Initialize ROI if not set (bottom-right corner - static region)
+        # Initialize ROI if not set
         if self.current_roi is None:
-            h, w = frame.shape[:2]
-            roi_w = int(w * 0.20)  # 20% width (narrower)
-            roi_h = int(h * 0.20)  # 20% height
-            roi_x = w - roi_w - 10  # Bottom-right, 10px margin
-            roi_y = h - roi_h - 10
+            # Try to load from initial_roi_config (passed from process_video)
+            if hasattr(self, 'initial_roi_config') and self.initial_roi_config:
+                roi_x = self.initial_roi_config['x']
+                roi_y = self.initial_roi_config['y']
+                roi_w = self.initial_roi_config['width']
+                roi_h = self.initial_roi_config['height']
+                logger.info(f"Using saved initial ROI: ({roi_x}, {roi_y}, {roi_w}x{roi_h})")
+            else:
+                # Default: bottom-right corner
+                h, w = frame.shape[:2]
+                roi_w = int(w * 0.20)  # 20% width
+                roi_h = int(h * 0.20)  # 20% height
+                roi_x = w - roi_w - 10  # Bottom-right, 10px margin
+                roi_y = h - roi_h - 10
+                logger.info(f"Using auto-calculated ROI: ({roi_x}, {roi_y}, {roi_w}x{roi_h})")
+            
             self.current_roi = (roi_x, roi_y, roi_w, roi_h)
             self.original_roi = self.current_roi
             
-            # Inicializar feature tracking para self-healing (perseguir objeto estático)
-            self.stability_analyzer.initialize_tracking(frame, self.current_roi)
-            logger.info(f"ROI inicial: {self.current_roi} | Feature tracking activado")
+            # Set reference frame with initial ROI
+            self.stability_analyzer.set_reference_frame(frame, self.current_roi)
         
-        # Module 2: Stability analysis (only in ROI - static region)
+        # Module 2: Stability analysis
         t2 = time.time()
-        dx, dy, is_vibrating = self.stability_analyzer.analyze_frame(frame, roi=self.current_roi)
+        stability_result = self.stability_analyzer.analyze_frame(frame)
+        dx = stability_result['displacement_x']
+        dy = stability_result['displacement_y']
+        is_vibrating = stability_result['is_vibrating']
+        
         self.metrics_history['dx'].append(dx)
         self.metrics_history['dy'].append(dy)
         
-        # Self-healing: Adjust ROI to track physical static features (persigue objeto estático)
-        # Corre SIEMPRE para compensar pan/tilt de cámara, no solo en vibración
+        # Self-healing: Adjust ROI to track same physical location despite camera movement
         if self.config.get('stability.enable_self_healing', True):
-            adjusted_roi = self.stability_analyzer.adjust_roi(
-                self.current_roi, frame.shape[:2], frame
-            )
-            if adjusted_roi != self.current_roi:
-                logger.debug(f"Frame {frame_count}: ROI tracking activo")
-            self.current_roi = adjusted_roi
+            self.current_roi = self.stability_analyzer.adjust_roi(self.original_roi)
+        
         t_stability = time.time() - t2
         
         # Module 3: Motion/Object Detection
@@ -272,43 +323,59 @@ class SentinelEye:
         processed = draw_performance_metrics(processed, perf_metrics['fps'], position=(w - 150, 30))
         
         # Show ROI tracking status (top-center for visibility)
-        roi_offset_x = self.stability_analyzer.roi_offset_x
-        roi_offset_y = self.stability_analyzer.roi_offset_y
-        total_offset = np.sqrt(roi_offset_x**2 + roi_offset_y**2)
-        tracking_text = f"ROI Displacement: ({roi_offset_x:.1f}, {roi_offset_y:.1f}) = {total_offset:.1f}px"
+        camera_offset_x = stability_result['camera_offset_x']
+        camera_offset_y = stability_result['camera_offset_y']
+        total_offset = np.sqrt(camera_offset_x**2 + camera_offset_y**2)
+        tracking_text = f"Camera Offset: ({camera_offset_x:.1f}, {camera_offset_y:.1f}) = {total_offset:.1f}px"
         cv2.putText(processed, tracking_text, (w//2 - 200, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 2)
         
         # Draw tracked features (puntos físicos que el ROI persigue)
-        # CON VECTORES DE MOVIMIENTO para visualizar el tracking activo
         tracked_features = self.stability_analyzer.tracked_features
-        prev_tracked_features = self.stability_analyzer.prev_tracked_features
-        if tracked_features is not None:
-            processed = draw_tracked_features(processed, tracked_features, 
-                                            prev_features=prev_tracked_features,
-                                            roi=self.current_roi, 
-                                            color=(0, 255, 255),
-                                            show_motion_vectors=True)
+        if tracked_features is not None and len(tracked_features) > 0:
+            for pt in tracked_features:
+                cv2.circle(processed, tuple(pt.astype(int)), 3, (0, 255, 255), -1)
         
-        # Draw ROI (centered, more visible)
-        # Mostrar desplazamiento acumulado del ROI para demostrar tracking activo
-        roi_offset_x = self.stability_analyzer.roi_offset_x
-        roi_offset_y = self.stability_analyzer.roi_offset_y
-        total_offset = np.sqrt(roi_offset_x**2 + roi_offset_y**2)
+        # Draw ROI ORIGINAL (gris) - referencia inicial
+        cv2.rectangle(processed,
+                     (self.original_roi[0], self.original_roi[1]),
+                     (self.original_roi[0] + self.original_roi[2], self.original_roi[1] + self.original_roi[3]),
+                     (128, 128, 128), 2)
+        cv2.putText(processed, "ROI Original", 
+                   (self.original_roi[0], self.original_roi[1] - 10),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 128, 128), 2)
         
-        if self.current_roi != self.original_roi:
-            processed = draw_roi(processed, self.original_roi, "Original ROI", (150, 150, 150))
-            roi_label = f"ROI Tracking | Offset: {total_offset:.1f}px"
-            processed = draw_roi(processed, self.current_roi, roi_label, (0, 255, 255), thickness=3)
+        # Draw ROI transformado (polígono cyan + bounding box rojo)
+        roi_corners = self.stability_analyzer.get_transformed_roi_corners()
+        if roi_corners is not None:
+            # Polígono de esquinas transformadas (cyan brillante)
+            roi_corners_int = np.int32(roi_corners)
+            cv2.polylines(processed, [roi_corners_int], isClosed=True, color=(255, 255, 0), thickness=3)
             
-            # Dibujar flecha desde ROI original hasta ROI actual
+            # Bounding box axis-aligned (rojo)
+            cv2.rectangle(processed, 
+                         (self.current_roi[0], self.current_roi[1]),
+                         (self.current_roi[0] + self.current_roi[2], self.current_roi[1] + self.current_roi[3]),
+                         (0, 0, 255), 2)
+            
+            # Label del ROI transformado
+            cv2.putText(processed, "ROI Tracked (Self-healing)", 
+                       (self.current_roi[0], self.current_roi[1] - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+            
+            # Flecha desde centro original a centro actual
             orig_center = (self.original_roi[0] + self.original_roi[2]//2, 
                           self.original_roi[1] + self.original_roi[3]//2)
             curr_center = (self.current_roi[0] + self.current_roi[2]//2,
                           self.current_roi[1] + self.current_roi[3]//2)
-            cv2.arrowedLine(processed, orig_center, curr_center, (255, 0, 255), 3, tipLength=0.2)
+            if orig_center != curr_center:
+                cv2.arrowedLine(processed, orig_center, curr_center, (255, 0, 255), 2, tipLength=0.3)
         else:
-            processed = draw_roi(processed, self.current_roi, "ROI (Tracking)", (0, 255, 255), thickness=3)
+            # Fallback: dibujar ROI simple
+            cv2.rectangle(processed,
+                         (self.current_roi[0], self.current_roi[1]),
+                         (self.current_roi[0] + self.current_roi[2], self.current_roi[1] + self.current_roi[3]),
+                         (255, 255, 0), 2)
         
         # Draw YOLO detections (on top of everything)
         yolo_detections = detections.get('yolo', [])
