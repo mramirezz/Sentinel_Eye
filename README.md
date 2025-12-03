@@ -1,5 +1,10 @@
 # Sentinel Eye - Industrial Camera Quality & Stability Monitor
 
+> **Sample Data & Outputs:** [Google Drive - Test Videos, Models & Results](https://drive.google.com/drive/folders/1iVfWtvqK9Hc_ZPepfytH61CzicCTpE0d?usp=sharing)  
+> **Contains: test videos (`data/`), trained models (`models/`), processed outputs (`outputs/`), and execution logs (`logs/`)**
+
+---
+
 ## Executive Summary
 
 Sentinel Eye is a real-time computer vision system designed for industrial camera monitoring in harsh environments (mining, construction, remote facilities). The system performs three critical functions:
@@ -342,86 +347,61 @@ This writes ROI coordinates to `initial_rois.json` for self-healing reference.
 
 ---
 
-## MLOps & Production Deployment Strategy
+## Production Monitoring 
+### What to Monitor
 
-### Model Versioning
-- TensorRT engines tagged by model size + input resolution (e.g., `yolov8l_640.engine`)
-- Config-driven model selection (no code changes for model swaps)
-- Version control: Git LFS for `.pt` weights, engines regenerated per deployment
+**1. Camera Health Alerts**
+- **QC Score drops below 60**: Camera needs cleaning or has obstruction
+- **Vibration detected**: Physical inspection needed (loose mount, mechanical issue)
+- **Sharpness declining**: Lens degradation or focus drift
 
-### Monitoring Strategy (1000+ Devices)
+**2. System Performance**
+- **FPS below 15**: System overloaded, reduce resolution or frame_skip
+- **Processing delays**: Check GPU availability
 
-**1. Data Drift Detection**
-- **QC Score Distribution**: Track mean/std over rolling 7-day windows
-- **Alert**: If mean drops >10 points, trigger "cleanliness drift" investigation
-- **Lens Cleanliness Metric**: Specific tracking for dirt accumulation
-  - Histogram comparison (Wasserstein distance) vs baseline "clean" distribution
+### Easy Monitoring Setup
 
-**2. Concept Drift (Camera Degradation)**
-- **Sharpness Trend**: Monitor exponential moving average (EMA)
-- **Vibration Frequency**: FFT on drift history to detect mechanical wear patterns
+**Option 1: Log Files (Simplest)**
+```bash
+# Check logs for warnings
+tail -f logs/sentinel_eye.log | grep -E "WARNING|ERROR|Low QC"
 
-**3. System Health**
-- **Effective FPS**: Alert if <15 FPS for sustained periods (compute overload)
-- **GPU Memory**: Track TensorRT allocation, detect memory leaks
+# Daily summary
+grep "FINAL STATISTICS" logs/*.log
+```
 
-**4. Aggregation Architecture**
-- Central logging: Fluentd/Logstash → Elasticsearch
-- Metrics: Prometheus scraping `/metrics` endpoint (future FastAPI wrapper)
-- Dashboards: Grafana with per-device panels and fleet-wide aggregates
+**Option 2: CSV Export (Spreadsheet-Friendly)**
+- Add simple CSV writer to save: timestamp, video, QC score, vibration flag
+- Import to Excel/Google Sheets for weekly reports
 
-### Deployment Pipeline
-1. **CI/CD**: GitHub Actions builds Docker image on merge to `main`
-2. **Registry**: Push to private Docker registry (AWS ECR / GCP Artifact Registry)
-3. **Orchestration**: Kubernetes DaemonSet for edge deployment
-   - ConfigMap: `config.yaml` per cluster
-   - PersistentVolume: `models/` for TensorRT engines
-4. **Rollback**: Blue-green deployment with health checks on QC metric stability
+**Option 3: Basic Dashboard (Recommended)**
+- Use free tools like Grafana Cloud (free tier: 10k metrics)
+- Parse logs and send to Prometheus
+- Set alerts: email when QC < 60 for >5 minutes
 
----
+### Model Updates
+- Keep models in `models/` folder
+- Docker rebuild picks up new `.engine` files automatically
+- No code changes needed, just replace model file
 
-## Code Quality & Design Patterns
-
-### Architecture Principles
-- **Modularity**: Three independent modules (QC, Stability, Detection) with clean interfaces
-- **SOLID Compliance**:
-  - Single Responsibility: Each class handles one concern
-  - Open/Closed: Extendable (new detectors) without modifying core
-  - Dependency Inversion: Config-driven, not hardcoded parameters
-
-### Key Design Patterns
-- **Strategy Pattern**: Pluggable YOLO model sizes via config
-- **Observer Pattern**: Metrics history for real-time plotting
-- **Factory Pattern**: Engine generation vs loading (lazy initialization)
-
-### Code Standards
-- Type hints (Python 3.8+)
-- Docstrings (Google style)
-- Logging: Structured with module-level loggers
-- Error handling: Graceful fallbacks (PyTorch → OpenCV QC if GPU fails)
+### Multi-Camera Deployment
+- Run one Docker container per camera
+- Different `config.yaml` for each camera's ROI
+- Centralize logs to shared network folder for easy monitoring
 
 ---
 
-## Limitations & Future Work
+## Code Quality & Design
 
-### Current Limitations
-1. **Single ROI**: Only one tracked region per video (extensible to multiple)
-2. **2D Motion**: No depth/rotation compensation (3D calibration future work)
-3. **Lighting Adaptation**: Static histogram thresholds (adaptive AGC planned)
-
-### Planned Enhancements
-1. **Multi-ROI Tracking**: Track multiple critical zones independently
-2. **Anomaly Detection**: LSTM on QC time-series for predictive maintenance
-3. **Edge TPU Support**: Coral/Jetson Nano deployment for <5W power budget
-4. **REST API**: FastAPI wrapper for on-demand processing and metrics query
+- **Modular**: 3 independent modules (QC, Stability, Detection)
+- **Configurable**: All parameters in `config.yaml`, no hardcoded values
+- **GPU-Optimized**: PyTorch + TensorRT for real-time performance
+- **Type-Safe**: Python type hints throughout
+- **Logged**: All warnings/errors captured for debugging
 
 ---
 
-## License & Contact
-
-**License**: MIT
-
-**Author**: Miguel Ramirez  
+**Author**: Mauricio Ramirez  
 **Repository**: [github.com/mramirezz/Sentinel_Eye](https://github.com/mramirezz/Sentinel_Eye)
 
 For technical questions or collaboration inquiries, open a GitHub issue.
