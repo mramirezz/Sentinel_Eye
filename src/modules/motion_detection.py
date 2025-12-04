@@ -86,8 +86,13 @@ class YOLODetector:
         if self.model is None:
             return []
         
+        # Mining vehicle classes: truck, car, bus (ignore boat, airplane)
+        MINING_RELEVANT_CLASSES = {'truck', 'car', 'bus'}
+        TRUCK_THRESHOLD = 0.10  # Lower threshold for trucks (mining vehicles)
+        
         try:
-            results = self.model(frame, conf=conf_threshold, verbose=False)
+            # Use higher IoU threshold for NMS to reduce duplicate boxes
+            results = self.model(frame, conf=0.08, imgsz=self.imgsz, iou=0.5, verbose=False)  # iou=0.5 removes more duplicates
             
             detections = []
             for result in results:
@@ -97,6 +102,16 @@ class YOLODetector:
                         conf = float(box.conf[0].cpu().numpy())
                         cls = int(box.cls[0].cpu().numpy())
                         class_name = result.names[cls] if hasattr(result, 'names') else str(cls)
+                        
+                        # Filter: only mining-relevant vehicles
+                        if class_name not in MINING_RELEVANT_CLASSES:
+                            continue
+                        
+                        # Apply class-specific thresholds
+                        if class_name == 'truck' and conf < TRUCK_THRESHOLD:
+                            continue
+                        elif class_name != 'truck' and conf < conf_threshold:
+                            continue
                         
                         detection = {
                             'box': (int(x1), int(y1), int(x2-x1), int(y2-y1)),
